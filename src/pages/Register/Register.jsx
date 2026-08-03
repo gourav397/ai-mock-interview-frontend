@@ -172,7 +172,7 @@ function Register() {
     }
 
 
-
+  console.log("FORM DATA SEND:", formData);
 
     try{
 
