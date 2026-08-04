@@ -15,6 +15,8 @@ import Exam from "../pages/Exam/Exam";
 import Test from "../pages/Test/Test";
 import Result from "../pages/Result";
 
+import UploadResume from "../pages/UploadResume";
+
 // Admin Pages
 import Admin from "../pages/Admin/Admin";
 import Questions from "../pages/Admin/Questions/Questions";
@@ -64,6 +66,13 @@ function AppRoutes(){
         path="/profile"
         element={<Profile />}
       />
+
+      <Route
+        path="/upload-resume"
+        element={<UploadResume />}
+      />
+
+
 
       <Route
        path="/category"

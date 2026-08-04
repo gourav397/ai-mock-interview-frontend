@@ -132,6 +132,25 @@ Start Test
 
           </div>
 
+          <div className="p-5 border rounded-xl">
+
+<h2 className="font-bold text-xl">
+📄 Upload Resume
+</h2>
+
+<p className="text-gray-500 mt-2">
+Upload your Resume for AI Interview
+</p>
+
+<button
+onClick={() => navigate("/upload-resume")}
+className="mt-4 bg-indigo-600 text-white px-4 py-2 rounded-lg"
+>
+Upload Resume
+</button>
+
+</div>
+
 
 
           <div className="p-5 border rounded-xl">
