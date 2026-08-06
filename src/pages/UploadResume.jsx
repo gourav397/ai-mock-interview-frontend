@@ -2,128 +2,75 @@ import { useState } from "react";
 import API from "../services/api";
 
 function UploadResume() {
+  const [file, setFile] = useState(null);
+  const [text, setText] = useState("");
+  const [loading, setLoading] = useState(false);
 
-    const [file,setFile] = useState(null);
+  const uploadResume = async () => {
+    if (!file) return alert("Choose Resume");
 
-    const [text,setText] = useState("");
+    setLoading(true);
+    const formData = new FormData();
+    formData.append("resume", file);
 
-    const uploadResume = async()=>{
+    try {
+      const res = await API.post("/upload/resume", formData, {
+        headers: { "Content-Type": "multipart/form-data" }
+      });
 
-        if(!file){
+      alert("Uploaded");
 
-            return alert("Choose Resume");
+      // ✅ ASLI FIX: response me "questions" hai — usse dikhao
+      const qs = res.data.questions;
 
-        }
-
-        const formData =
-            new FormData();
-
-        formData.append(
-            "resume",
-            file
+      if (Array.isArray(qs) && qs.length > 0) {
+        setText(
+          qs
+            .map(
+              (q, i) =>
+                `${i + 1}. ${q.question}\n   (${q.type || "technical"})`
+            )
+            .join("\n\n")
         );
+      } else {
+        setText("⚠️ Questions generate nahi hue. Thodi der baad dobara try karo.");
+      }
+    } catch (error) {
+      alert(error.response?.data?.message || error.message || "Error");
+      setText("");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-        try{
+  return (
+    <div className="p-10">
+      <h1 className="text-3xl font-bold">Upload Resume</h1>
 
-            const res =
-                await API.post(
+      <input
+        type="file"
+        accept=".pdf,.docx,.txt"
+        onChange={(e) => setFile(e.target.files[0])}
+        className="mt-5"
+      />
+      <br />
 
-                    "/upload/resume",
+      <button
+        onClick={uploadResume}
+        disabled={loading}
+        className="bg-blue-600 text-white px-5 py-3 rounded mt-5"
+      >
+        {loading ? "⏳ Please wait..." : "Upload"}
+      </button>
 
-                    formData,
-
-                    {
-
-                        headers:{
-
-                            "Content-Type":"multipart/form-data"
-
-                        }
-
-                    }
-
-                );
-
-            alert("Uploaded");
-
-            setText(
-                res.data.extractedText
-            );
-
-        }
-
-        catch(error){
-
-            alert(error.response?.data?.message);
-
-        }
-
-    };
-
-
-
-    return(
-
-        <div
-        className="p-10"
-        >
-
-            <h1
-            className="text-3xl font-bold"
-            >
-
-                Upload Resume
-
-            </h1>
-
-            <input
-
-            type="file"
-
-            accept=".pdf,.docx,.txt"
-
-            onChange={(e)=>{
-
-                setFile(
-                    e.target.files[0]
-                );
-
-            }}
-
-            className="mt-5"
-
-            />
-
-            <br/>
-
-            <button
-
-            onClick={uploadResume}
-
-            className="bg-blue-600 text-white px-5 py-3 rounded mt-5"
-
-            >
-
-                Upload
-
-            </button>
-
-            <textarea
-
-            value={text}
-
-            readOnly
-
-            rows={20}
-
-            className="w-full border mt-8 p-5"
-
-            />
-
-        </div>
-
-    );
-
+      <textarea
+        value={text}
+        readOnly
+        rows={20}
+        className="w-full border mt-8 p-5"
+      />
+    </div>
+  );
 }
 
 export default UploadResume;
