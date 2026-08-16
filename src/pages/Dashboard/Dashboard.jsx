@@ -46,6 +46,19 @@ setResults(res.data);
 
 }
 
+const stats = await API.get("/gamification/me").then(r => r.data);
+// API ka baseURL already ".../api" hai, to ye sahi hit karega
+
+// "Daily Check-in" button
+async function checkIn() {
+  const r = await fetch("/api/gamification/checkin", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` }
+  }).then(r => r.json());
+  alert(r.message);
+  if (!r.already) location.reload();  // ya UI update karo
+}
+
 }
 catch(error){
 
@@ -67,6 +80,7 @@ loadResults();
     localStorage.removeItem("user");
 
     navigate("/login");
+    
   };
 
 
@@ -81,7 +95,7 @@ loadResults();
 
 
         <p className="text-gray-500 mt-2">
-          AI Mock Interview Dashboard
+          AI Interview Dashboard
         </p>
 
 
@@ -280,9 +294,11 @@ className="border rounded-lg p-4"
 <b>Wrong Questions:</b> {result.wrongQuestions}
 </p>
 
+
 <p>
 <b>Performance:</b> {result.performance}
 </p>
+
 
 <p>
 <b>Date:</b> 
@@ -309,4 +325,4 @@ className="border rounded-lg p-4"
 }
 
 
-export default Dashboard; 
+export default Dashboard;

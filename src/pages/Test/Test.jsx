@@ -27,16 +27,21 @@ function Test() {
     setSkipped(0);
     setFinished(false);
     try {
-      // 🔥 total: 50 bhejo — backend ko 50 questions generate karne ko bolega
-      const res = await API.get(AI_BASE, {
-        params: { category, difficulty: "Medium", total: 50 }
-      });
-      setQuestions(res.data.questions || []);
-    } catch (err) {
-      setError(err.response?.data?.message || "Questions generate nahi ho paye");
-    } finally {
-      setLoading(false);
-    }
+  // 🔥 count=50 → 50 questions | fresh=1 → cache skip → HAR BAAR alag questions
+  const res = await API.get(AI_BASE, {
+    params: { category, difficulty: "Medium", count: 50 }
+  });
+  setQuestions(res.data.questions || []);
+} catch (err) {
+  if (err.response?.status === 409) {
+    setError("Question bank pehli baar bana raha hai (~2-3 min). Thodi der baad Retry dabao.");
+  } else {
+    setError(err.response?.data?.message || "Questions generate nahi ho paye");
+  }
+} finally {
+  setLoading(false);   // ✅ YEH LINE MISSING THI — isi se loading atki rehti thi
+}
+    
   };
 
   useEffect(() => {

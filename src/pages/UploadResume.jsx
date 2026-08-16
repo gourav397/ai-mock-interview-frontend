@@ -51,7 +51,7 @@ function UploadResume() {
 
   return (
     <div className="p-6">
-      <h1 className="text-3xl font-bold">AI Mock Interview</h1>
+      <h1 className="text-3xl font-bold">AI Interview</h1>
 
       <input
         type="file"
