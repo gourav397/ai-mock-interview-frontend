@@ -2,6 +2,30 @@ import { useEffect, useState } from "react";
 import API from "../../services/api";
 import { useNavigate } from "react-router-dom";
 
+// 🔥 FALLBACK — API fail ho jaye to bhi categories kabhi khali nahi hongi
+const FALLBACK_CATEGORIES = [
+  "Haryana GK",
+  "General Knowledge",
+  "Reasoning",
+  "Current Affairs",
+  "Indian History",
+  "Indian Polity",
+  "Geography",
+  "Science",
+  "Computer",
+  "Python",
+  "Cyber Security",
+  "AI & Machine Learning",
+  "SSC",
+  "UPSC",
+  "Railway",
+  "Banking",
+  "Defence",
+  "General Hindi",
+  "General Science",
+  "Mathematics"
+];
+
 function Interview() {
   const navigate = useNavigate();
 
@@ -10,7 +34,7 @@ function Interview() {
   const [difficulty, setDifficulty] = useState("Medium");
   const [questions, setQuestions] = useState([]);
   const [started, setStarted] = useState(false);
-  const [loading, setLoading] = useState(false); // 🔥 AI generate hone par dikhega
+  const [loading, setLoading] = useState(false);
   const [current, setCurrent] = useState(0);
   const [selected, setSelected] = useState("");
   const [showResult, setShowResult] = useState(false);
@@ -18,22 +42,23 @@ function Interview() {
   const [answeredQuestions, setAnsweredQuestions] = useState(0);
   const [timeLeft, setTimeLeft] = useState(30);
 
-  // LOAD CATEGORY
+  // 🔥 LOAD CATEGORY — naya PUBLIC route (login nahi maangta)
   useEffect(() => {
     const loadCategories = async () => {
       try {
-        const res = await API.get("/interview/categories");
+        const res = await API.get("/interview-session/categories");
         console.log("CATEGORIES:", res.data);
-        setCategories(res.data);
+        const list = res.data?.categories || [];
+        setCategories(list.length ? list : FALLBACK_CATEGORIES);
       } catch (error) {
-        console.log(error);
-        alert("Category load nahi hui");
+        console.log("Category load error:", error);
+        setCategories(FALLBACK_CATEGORIES); // fallback — kabhi khali nahi
       }
     };
     loadCategories();
   }, []);
 
-  // START INTERVIEW
+  // 🔥 START INTERVIEW — sab difficulties ke liye AI generate route (public)
   const startInterview = async () => {
     if (!category) {
       alert("Select Category");
@@ -43,26 +68,15 @@ function Interview() {
     setLoading(true);
 
     try {
-      let questionList = [];
-
-      if (difficulty === "Easy" || difficulty === "Hard") {
-        // 🔥 Easy/Hard — AI se 50 questions auto-generate (manually add nahi karne padenge)
-        const res = await API.get("/ai-interview/generate", {
-          params: { category, difficulty, total: 50 },
-        });
-        questionList = res.data.questions || [];
-      } else {
-        // Medium — existing manually added questions (DB)
-        const res = await API.get(
-          `/interview/questions?category=${category}&difficulty=${difficulty}&limit=50`
-        );
-        questionList = res.data;
-      }
+      const res = await API.get("/ai-interview/generate", {
+        params: { category, difficulty, count: 50 }, // ⚠️ "count" use karo, "total" nahi
+      });
+      const questionList = res.data.questions || [];
 
       console.log("QUESTIONS:", questionList);
 
       if (questionList.length === 0) {
-        alert("Is category me questions nahi mile");
+        alert("Is category me questions nahi mile — bank ban raha hai, 1 min baad try karo");
         return;
       }
 
@@ -75,13 +89,15 @@ function Interview() {
       setStarted(true);
     } catch (error) {
       console.log(error);
-      alert("Questions load nahi hue");
+      // Bank ban raha hai (409) → backend ka message dikhao
+      const msg = error.response?.data?.message;
+      alert(msg || "Questions load nahi hue — thodi der baad try karo");
     } finally {
       setLoading(false);
     }
   };
 
-  // TIMER — same 30 second pattern (Easy/Hard AI par bhi)
+  // TIMER — same 30 second pattern
   useEffect(() => {
     if (!started || showResult) return;
 
@@ -125,8 +141,8 @@ function Interview() {
     } else {
       try {
         const user = JSON.parse(localStorage.getItem("user"));
-        const finalScore =
-          score + (selected === questions[current].correctAnswer ? 1 : 0);
+        // 🔥 score me last question ka +1 pehle hi add ho chuka hai (submitAnswer me)
+        const finalScore = score;
         const percentage = Math.round((finalScore / questions.length) * 100);
 
         console.log("USER DATA =", user);
@@ -143,7 +159,7 @@ function Interview() {
             category: category,
             difficulty: difficulty,
             totalQuestions: questions.length,
-            score: score,
+            score: finalScore,
             percentage: percentage,
           });
 
@@ -173,7 +189,7 @@ function Interview() {
 
         navigate("/result", {
           state: {
-            score: score,
+            score: finalScore,
             totalQuestions: questions.length,
             category: category,
             percentage: percentage,
@@ -290,14 +306,14 @@ function Interview() {
                   Correct Answer: <b>{questions[current].correctAnswer}</b>
                 </p>
 
-                {questions[current].options.map((option) => (
+                {questions[current]?.options?.map((option) => (
                   <div
                     key={option.text}
                     className="mt-4 p-3 bg-white border rounded"
                   >
                     <p className="font-bold">Option: {option.text}</p>
                     <p className="text-gray-600 mt-2">
-                      Explanation: {option.explanation}
+                      Explanation: {option.info || option.explanation || ""}
                     </p>
                   </div>
                 ))}
