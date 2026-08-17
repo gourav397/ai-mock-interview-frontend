@@ -78,6 +78,8 @@ function Navbar() {
           Home
         </Link>
 
+        <Link to="/class-exam">📘 Class 11/12</Link>
+
         {token ? (
           <>
             <Link to="/dashboard" className="text-gray-700 hover:text-blue-600">

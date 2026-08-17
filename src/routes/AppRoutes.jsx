@@ -10,7 +10,7 @@ import Dashboard from "../pages/Dashboard/Dashboard";
 import Profile from "../pages/Profile/Profile";
 
 import Interview from "../pages/Interview/Interview";
-
+import ClassExam from "../pages/ClassExam";
 import Exam from "../pages/Exam/Exam";
 import Test from "../pages/Test/Test";
 import Result from "../pages/Result";
@@ -82,6 +82,11 @@ function AppRoutes(){
       <Route
         path="/interview"
         element={<Interview />}
+      />
+
+      <Route
+        path="/class-exam"
+        element={<ClassExam />}
       />
 
 

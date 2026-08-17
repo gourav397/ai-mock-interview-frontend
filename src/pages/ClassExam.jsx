@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import API from "../../services/api";
+import API from "../services/api";
 import { useNavigate } from "react-router-dom";
 
 // 🔥 FALLBACK — API fail ho to bhi structure dikhega
