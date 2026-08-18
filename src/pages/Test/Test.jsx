@@ -2,8 +2,15 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import API from "../../services/api";
 
+// 🔥 Total time per difficulty (seconds) — 50 questions ke liye
+const TIME_LIMITS = {
+  Easy: 45 * 60,   // 45 min
+  Medium: 60 * 60, // 60 min
+  Hard: 75 * 60,   // 75 min
+};
+
 function Test() {
-  const { category } = useParams(); // /test/:category se category aati hai
+  const { category } = useParams();
   const navigate = useNavigate();
 
   const [difficulty, setDifficulty] = useState("Medium");
@@ -13,9 +20,18 @@ function Test() {
   const [current, setCurrent] = useState(0);
   const [answers, setAnswers] = useState({});
   const [finished, setFinished] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(30);
+  const [timeLeft, setTimeLeft] = useState(0); // total seconds
+  const [timeUp, setTimeUp] = useState(false); // time khatam hua ya nahi
   const [saving, setSaving] = useState(false);
   const [reviewFilter, setReviewFilter] = useState("all");
+
+  // ⏱ Time ko HH:MM:SS me dikhao
+  const formatTime = (secs) => {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
+  };
 
   // ---------- START TEST ----------
   const startTest = async () => {
@@ -33,7 +49,8 @@ function Test() {
       setAnswers({});
       setCurrent(0);
       setFinished(false);
-      setTimeLeft(30);
+      setTimeUp(false);
+      setTimeLeft(TIME_LIMITS[difficulty] || 60 * 60); // 🔥 total time set
       setReviewFilter("all");
       setStarted(true);
     } catch (error) {
@@ -46,37 +63,26 @@ function Test() {
 
   const selected = answers[current] || "";
 
-  // ---------- TIMER ----------
+  // ---------- TOTAL TIMER (ek hi baar, pura test) ----------
   useEffect(() => {
     if (!started || finished) return;
     if (timeLeft <= 0) {
-      if (current < questions.length - 1) {
-        setCurrent((c) => c + 1);
-        setTimeLeft(30);
-      } else {
-        setFinished(true);
-      }
+      setTimeUp(true);
+      setFinished(true); // ⏰ time khatam → auto-submit
       return;
     }
     const t = setTimeout(() => setTimeLeft((p) => p - 1), 1000);
     return () => clearTimeout(t);
-  }, [timeLeft, started, finished, current, questions.length]);
+  }, [timeLeft, started, finished]);
 
-  // ---------- NAVIGATION ----------
+  // ---------- NAVIGATION (timer kabhi reset NAHI hota) ----------
   const goNext = () => {
-    if (current < questions.length - 1) {
-      setCurrent((c) => c + 1);
-      setTimeLeft(30);
-    } else {
-      setFinished(true);
-    }
+    if (current < questions.length - 1) setCurrent((c) => c + 1);
+    else setFinished(true);
   };
 
   const goPrev = () => {
-    if (current > 0) {
-      setCurrent((c) => c - 1);
-      setTimeLeft(30);
-    }
+    if (current > 0) setCurrent((c) => c - 1);
   };
 
   // ---------- SUBMIT ----------
@@ -88,7 +94,7 @@ function Test() {
     goNext();
   };
 
-  // ---------- SKIP — koi popup nahi, answer clear + aage ----------
+  // ---------- SKIP — koi popup nahi ----------
   const skipQuestion = () => {
     setAnswers((prev) => {
       const next = { ...prev };
@@ -167,6 +173,10 @@ function Test() {
     }
   };
 
+  // ⏱ Timer color: 10 min se kam = yellow, 5 min se kam = red
+  const timerColor =
+    timeLeft < 5 * 60 ? "text-red-600" : timeLeft < 10 * 60 ? "text-amber-600" : "text-green-600";
+
   return (
     <div className="min-h-screen bg-gray-100 p-8">
       <div className="max-w-3xl mx-auto bg-white p-8 rounded-xl shadow">
@@ -186,6 +196,14 @@ function Test() {
               <option>Hard</option>
             </select>
 
+            {/* 🔥 Total time info */}
+            <div className="mt-4 p-4 rounded-lg bg-blue-50 border border-blue-200 text-sm font-semibold">
+              <p className="text-gray-700">⏰ Total Time (50 questions):</p>
+              <p className="mt-1">🟢 Easy: 45 min</p>
+              <p>🟡 Medium: 60 min</p>
+              <p>🔴 Hard: 75 min</p>
+            </div>
+
             <button
               onClick={startTest}
               disabled={loading}
@@ -203,8 +221,14 @@ function Test() {
         ) : finished ? (
           /* ============ REVIEW SCREEN ============ */
           <>
+            {timeUp && (
+              <div className="mt-4 p-3 rounded-lg bg-red-50 border border-red-300 text-red-700 font-semibold text-center">
+                ⏰ Time khatam ho gaya — test auto-submit ho gaya
+              </div>
+            )}
+
             {/* SUMMARY CARD */}
-            <div className="mt-6 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-6 shadow-lg">
+            <div className="mt-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-6 shadow-lg">
               <div className="flex flex-col sm:flex-row items-center gap-6">
                 <svg viewBox="0 0 120 120" className="w-32 h-32 shrink-0">
                   <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="12" />
@@ -308,7 +332,7 @@ function Test() {
               <button
                 onClick={() => {
                   setStarted(false); setFinished(false); setQuestions([]);
-                  setAnswers({}); setCurrent(0); setTimeLeft(30);
+                  setAnswers({}); setCurrent(0); setTimeLeft(0); setTimeUp(false);
                 }}
                 className="flex-1 bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-xl font-bold transition"
               >
@@ -328,12 +352,17 @@ function Test() {
           <>
             <p className="mt-2 text-sm text-gray-500 font-semibold">{category} — {difficulty}</p>
 
+            {/* 🔥 TOTAL TIME — upar right side sticky jaisa */}
+            <div className={`mt-3 px-4 py-2 rounded-lg bg-gray-100 border font-bold text-center text-lg ${timerColor}`}>
+              ⏱ Total Time Left: {formatTime(timeLeft)}
+            </div>
+
             {/* Question numbers */}
             <div className="mt-4 flex flex-wrap gap-2">
               {questions.map((q, i) => (
                 <button
                   key={i}
-                  onClick={() => { setCurrent(i); setTimeLeft(30); }}
+                  onClick={() => setCurrent(i)}
                   className={`w-8 h-8 rounded-full text-xs font-bold ${
                     i === current
                       ? "bg-blue-600 text-white"
@@ -364,9 +393,8 @@ function Test() {
             </p>
 
             <p className="mt-4">Question {current + 1}/{questions.length}</p>
-            <p className="mt-2 text-red-600 font-bold">⏱ Time Left: {timeLeft} sec</p>
 
-            <h2 className="text-xl font-bold mt-4">{questions[current]?.question}</h2>
+            <h2 className="text-xl font-bold mt-2">{questions[current]?.question}</h2>
 
             <div className="mt-5 space-y-3">
               {questions[current]?.options?.map((option, index) => (
@@ -400,7 +428,7 @@ function Test() {
 
             <p className="mt-3 text-sm text-gray-500">
               💡 Test khatam hone ke baad hi pata chalega kaun se sahi / galat hain.
-              Skip kiye hue questions galat count honge — pichle par jaa kar badal sakte ho.
+              Total time chalta rahega — kahin bhi jao, timer nahi rukega.
             </p>
           </>
         )}
