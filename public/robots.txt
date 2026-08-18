@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://ai-mock-interview-frontend-alpha.vercel.app/sitemap.xml
