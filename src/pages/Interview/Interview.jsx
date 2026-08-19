@@ -3,9 +3,9 @@ import { useNavigate, Link } from "react-router-dom";
 import API from "../../services/api";
 
 const TIME_LIMITS = {
-  Easy: 30 * 60,      // 30 min
-  Medium: 45 * 60,     // 45 min
-  Hard: 60 * 60,       // 60 min
+  Easy: 30 * 60,
+  Medium: 45 * 60,
+  Hard: 60 * 60,
 };
 
 const QUESTION_COUNTS = {
@@ -36,6 +36,7 @@ function Interview() {
   const [saved, setSaved] = useState(false);
   const [reviewFilter, setReviewFilter] = useState("all");
   const [savedResultId, setSavedResultId] = useState(null);
+  const [statusMessage, setStatusMessage] = useState("");
 
   // ─── Voice / Notes ─────────────────────────────────────────────
   const [voiceNotes, setVoiceNotes] = useState({});
@@ -45,10 +46,9 @@ function Interview() {
   const audioChunks = useRef([]);
 
   // ─── Confidence / Feedback ────────────────────────────────────
-  const [confidence, setConfidence] = useState({});  // { 0: 80, 1: 65, ... }
-  const [feedback, setFeedback] = useState({});      // { 0: "Good", 1: "Needs work" }
+  const [confidence, setConfidence] = useState({});
+  const [feedback, setFeedback] = useState({});
 
-  // Experience levels
   const experienceLevels = [
     "Fresher",
     "Junior (0-2 yrs)",
@@ -65,7 +65,6 @@ function Interview() {
     return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
   };
 
-  // 🔥 Option explanation
   const getOptionExplanation = (opt) => {
     if (typeof opt === "string") return "";
     if (opt.explanation) return opt.explanation;
@@ -75,7 +74,6 @@ function Interview() {
     return "";
   };
 
-  // 🔥 General question explanation
   const getGeneralExplanation = (q) => {
     if (q.explanation) return q.explanation;
     if (q.description) return q.description;
@@ -83,13 +81,12 @@ function Interview() {
     return "";
   };
 
-  // 🔥 Check: kya kisi option ki apni explanation hai?
   const anyOptionHasExplanation = (q) => {
     return q.options?.some((opt) => typeof opt === "object" && getOptionExplanation(opt));
   };
 
-  // ─── Start Interview ──────────────────────────────────────────
-  const startInterview = async () => {
+  // ─── Start Interview (with auto-retry) ────────────────────────
+  const startInterview = async (retryCount = 0) => {
     if (!jobRole.trim()) {
       alert("Please enter a Job Role before starting!");
       return;
@@ -100,6 +97,12 @@ function Interview() {
     }
 
     setLoading(true);
+    if (retryCount > 0) {
+      setStatusMessage(`🔄 Preparing questions... (attempt ${retryCount}/5)`);
+    } else {
+      setStatusMessage(`🤖 AI generating ${difficulty} questions for ${jobRole}...`);
+    }
+
     try {
       const count = QUESTION_COUNTS[difficulty] || 30;
       const res = await API.get("/ai-interview/generate", {
@@ -109,8 +112,9 @@ function Interview() {
           count,
           experience,
           techStack,
-          type: "interview", // special flag for interview-style questions
+          type: "interview",
         },
+        timeout: 25000,
       });
 
       const qs = res.data.questions || [];
@@ -131,12 +135,32 @@ function Interview() {
       setVoiceNotes({});
       setConfidence({});
       setFeedback({});
+      setStatusMessage("");
       setStarted(true);
     } catch (error) {
-      console.log(error);
-      alert(error.response?.data?.message || "Interview questions load nahi hue");
+      const status = error.response?.status;
+      const msg = error.response?.data?.message || "";
+
+      // Auto-retry for 409 (bank building) — max 5 retries
+      if (status === 409 && retryCount < 5) {
+        const waitTime = Math.min(1000 * (retryCount + 1), 5000);
+        console.log(`⏳ Bank building... retry ${retryCount + 1}/5 in ${waitTime}ms`);
+        setStatusMessage(`🔄 Questions are being prepared... (attempt ${retryCount + 1}/5)`);
+        await new Promise((r) => setTimeout(r, waitTime));
+        return startInterview(retryCount + 1);
+      }
+
+      if (status === 503 || error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
+        alert("⏱️ Server is busy — please try again in a few seconds.");
+      } else if (status === 409) {
+        alert("Server is still preparing questions. Please try again.");
+      } else {
+        alert(msg || "Interview questions load nahi hue. Please try again.");
+      }
+      console.log("Interview start error:", error);
     } finally {
       setLoading(false);
+      setStatusMessage("");
     }
   };
 
@@ -219,7 +243,6 @@ function Interview() {
   // ─── Confidence Slider ────────────────────────────────────────
   const updateConfidence = (qIndex, value) => {
     setConfidence((prev) => ({ ...prev, [qIndex]: value }));
-    // Auto-feedback based on confidence
     const fb = value >= 80 ? "Excellent 💪" : value >= 60 ? "Good 👍" : value >= 40 ? "Average 👌" : "Needs Practice 📖";
     setFeedback((prev) => ({ ...prev, [qIndex]: fb }));
   };
@@ -333,7 +356,6 @@ function Interview() {
     }
   };
 
-  // ─── Timer Color ──────────────────────────────────────────────
   const timerColor =
     timeLeft < 5 * 60
       ? "text-red-600"
@@ -344,7 +366,7 @@ function Interview() {
   // ─── RENDER ────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-indigo-950 to-slate-900">
-      {/* 🔥 PREMIUM GLASS HEADER */}
+      {/* HEADER */}
       <header className="bg-white/5 backdrop-blur-xl border-b border-white/10 sticky top-0 z-50">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <Link to="/dashboard" className="flex items-center gap-2">
@@ -367,8 +389,8 @@ function Interview() {
 
       <div className="max-w-4xl mx-auto px-4 py-8">
         {!started ? (
-  <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10">
-    {/* ─── CONFIGURATION SCREEN ───────────────────────── */}
+          /* ─── CONFIGURATION SCREEN ──────────────────────────── */
+          <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10">
             <h1 className="text-3xl font-bold text-white">🎤 AI Mock Interview</h1>
             <p className="text-white/50 mt-1">Practice with real interview questions</p>
 
@@ -442,23 +464,30 @@ function Interview() {
               </div>
 
               <button
-                onClick={startInterview}
+                onClick={() => startInterview(0)}
                 disabled={loading}
                 className="w-full py-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold rounded-xl hover:shadow-lg hover:shadow-purple-600/30 transition-all disabled:opacity-50 text-lg"
               >
-                {loading ? "⏳ Generating AI Interview Questions..." : "🚀 Start Interview"}
+                {loading ? "⏳ Preparing..." : "🚀 Start Interview"}
               </button>
 
               {loading && (
-                <p className="text-purple-300 text-sm text-center animate-pulse">
-                  AI {difficulty} interview questions bana raha hai for {jobRole}... 30-60 sec
-                </p>
+                <div className="text-center">
+                  <p className="text-purple-300 text-sm text-center animate-pulse">
+                    {statusMessage || `🤖 AI ${difficulty} questions bana raha hai for ${jobRole}...`}
+                  </p>
+                  <div className="mt-3 flex justify-center gap-1">
+                    <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></div>
+                    <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></div>
+                    <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></div>
+                  </div>
+                </div>
               )}
             </div>
           </div>
         ) : !finished ? (
           <>
-            {/* ─── QUESTION NUMBER NAVIGATION ───────────────── */}
+            {/* QUESTION NUMBER NAVIGATION */}
             <div className="flex flex-wrap gap-2 mb-6">
               {questions.map((q, i) => (
                 <button
@@ -477,7 +506,7 @@ function Interview() {
               ))}
             </div>
 
-            {/* ─── TIMER + PROGRESS + QUESTION ─────────────── */}
+            {/* TIMER + PROGRESS + QUESTION */}
             <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 mb-6">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
@@ -526,7 +555,7 @@ function Interview() {
               </div>
             </div>
 
-            {/* ─── OPTIONS ─────────────────────────────────── */}
+            {/* OPTIONS */}
             <div className="space-y-3 mb-4">
               {questions[current]?.options?.map((option, index) => {
                 const optText = typeof option === "string" ? option : option.text;
@@ -567,10 +596,9 @@ function Interview() {
               })}
             </div>
 
-            {/* ─── VOICE RECORDING + CONFIDENCE ────────────── */}
+            {/* VOICE RECORDING + CONFIDENCE */}
             <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-4 mb-6">
               <div className="flex flex-wrap items-center gap-4">
-                {/* Voice Recording */}
                 <div className="flex items-center gap-2">
                   {recording && recordingFor === current ? (
                     <button
@@ -594,7 +622,6 @@ function Interview() {
                   )}
                 </div>
 
-                {/* Confidence Slider */}
                 <div className="flex items-center gap-3 flex-1 min-w-[200px]">
                   <span className="text-white/50 text-xs shrink-0">Confidence:</span>
                   <input
@@ -617,7 +644,7 @@ function Interview() {
               )}
             </div>
 
-            {/* ─── NAVIGATION BUTTONS ──────────────────────── */}
+            {/* NAVIGATION BUTTONS */}
             <div className="flex gap-3">
               <button
                 onClick={goPrev}
@@ -642,7 +669,7 @@ function Interview() {
           </>
         ) : (
           <>
-            {/* ─── RESULTS SECTION ───────────────────────────── */}
+            {/* RESULTS SECTION */}
             {timeUp && (
               <div className="mb-4 p-4 rounded-xl bg-red-500/20 border border-red-400/30 text-red-300 font-semibold text-center">
                 ⏰ Time's up! Auto-submitted.
@@ -658,7 +685,6 @@ function Interview() {
             {/* Hero Score Card */}
             <div className="bg-gradient-to-br from-purple-600 via-blue-600 to-indigo-700 rounded-2xl p-8 shadow-2xl border border-white/20 mb-6">
               <div className="flex flex-col md:flex-row items-center gap-8">
-                {/* Circular Progress */}
                 <div className="relative w-36 h-36 shrink-0">
                   <svg className="w-36 h-36 transform -rotate-90" viewBox="0 0 120 120">
                     <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="8" />
@@ -771,7 +797,6 @@ function Interview() {
                       </span>
                     </div>
 
-                    {/* Confidence & Voice Note Badge */}
                     {(qConfidence || qVoiceNote) && (
                       <div className="flex flex-wrap gap-2 mt-2">
                         {qConfidence && (
@@ -792,7 +817,6 @@ function Interview() {
                       </div>
                     )}
 
-                    {/* Options with explanations */}
                     <div className="mt-4 space-y-2">
                       {q.options?.map((opt, oi) => {
                         const optText = typeof opt === "string" ? opt : opt.text;
@@ -834,7 +858,6 @@ function Interview() {
                       })}
                     </div>
 
-                    {/* General explanation */}
                     {generalExplanation && !hasOptionExp && (
                       <div className="mt-3 p-4 rounded-xl bg-blue-500/10 border border-blue-400/20 text-sm text-blue-200 leading-relaxed">
                         <b>📖 Additional Info:</b> {generalExplanation}
@@ -846,7 +869,6 @@ function Interview() {
                       </div>
                     )}
 
-                    {/* Voice Note Player */}
                     {qVoiceNote && (
                       <div className="mt-3">
                         <audio controls className="w-full h-10">
