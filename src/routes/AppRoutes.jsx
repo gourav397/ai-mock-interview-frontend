@@ -16,6 +16,7 @@ import Test from "../pages/Test/Test";
 import Result from "../pages/Result";
 
 import UploadResume from "../pages/UploadResume";
+import HistoryDetail from "../pages/HistoryDetail";
 
 // Admin Pages
 import Admin from "../pages/Admin/Admin";
@@ -46,6 +47,7 @@ function AppRoutes() {
         <Route path="/exam" element={<Exam />} />
         <Route path="/test/:category" element={<Test />} />
         <Route path="/result" element={<Result />} />
+        <Route path="/history-detail/:id" element={<HistoryDetail />} />
 
         {/* Admin */}
         <Route path="/admin" element={<Admin />} />
