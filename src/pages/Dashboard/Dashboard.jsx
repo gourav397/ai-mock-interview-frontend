@@ -117,6 +117,11 @@ function Dashboard() {
               🎯 Interview
             </button>
           </div>
+          
+<button onClick={() => navigate("/ai-interview")}
+  className="px-5 py-2.5 bg-gradient-to-r from-pink-600 to-purple-600 text-white font-bold rounded-xl shadow-lg shadow-pink-600/30 hover:shadow-pink-600/50 hover:scale-105 transition-all duration-200">
+  🎙️ AI Interview
+</button>
         </div>
 
         {/* 🔥 STATS CARDS — PREMIUM */}
@@ -190,6 +195,13 @@ function Dashboard() {
                 <span className="text-left">Start AI Interview</span>
                 <span className="ml-auto text-emerald-300">→</span>
               </button>
+              
+<button onClick={() => navigate("/ai-interview")}
+  className="w-full p-3 bg-gradient-to-r from-pink-600/30 to-purple-600/30 rounded-xl border border-pink-400/20 text-white font-semibold flex items-center gap-3 hover:from-pink-600/50 hover:to-purple-600/50 transition-all">
+  <span className="text-2xl">🎙️</span>
+  <span className="text-left">AI Voice Interview — Talk to Alex</span>
+  <span className="ml-auto text-pink-300">→</span>
+</button>
               <button onClick={() => navigate("/upload-resume")}
                 className="w-full p-3 bg-gradient-to-r from-amber-600/30 to-orange-600/30 rounded-xl border border-amber-400/20 text-white font-semibold flex items-center gap-3 hover:from-amber-600/50 hover:to-orange-600/50 transition-all">
                 <span className="text-2xl">📄</span>
