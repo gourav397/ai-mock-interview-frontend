@@ -44,7 +44,7 @@ export default function AIInterview() {
     'Lead (10+ yrs)',
   ];
 
-  // ── Track AI messages (deduplicated) ──
+  // Track AI messages (deduplicated)
   useEffect(() => {
     if (lastAiMessage && (interviewState === 'active' || interviewState === 'feedback')) {
       const hash = lastAiMessage.slice(0, 100);
@@ -55,7 +55,7 @@ export default function AIInterview() {
     }
   }, [lastAiMessage, interviewState]);
 
-  // ── Update AI visual state (use ref-based checks for accuracy) ──
+  // Poll-based AI state (uses refs for accuracy)
   useEffect(() => {
     const interval = setInterval(() => {
       if (speechSynth.isSpeakingRef.current) {
@@ -78,7 +78,6 @@ export default function AIInterview() {
         setAiEmotion('neutral');
       }
     }, 300);
-
     return () => clearInterval(interval);
   }, [speechSynth.isSpeakingRef, isProcessing, speechRec.isListening, interviewState]);
 
@@ -107,7 +106,6 @@ export default function AIInterview() {
 
         <div className="max-w-4xl mx-auto px-4 py-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Left — Avatar Preview */}
             <div className="flex flex-col items-center justify-center bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10">
               <AIAvatar state="idle" emotion="neutral" />
               <h2 className="text-white text-xl font-bold mt-6">AI Mock Interview</h2>
@@ -121,7 +119,6 @@ export default function AIInterview() {
               </div>
             </div>
 
-            {/* Right — Config Form */}
             <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10">
               <h2 className="text-2xl font-bold text-white">🎤 Start Interview</h2>
               <p className="text-white/50 text-sm mt-1">Fill in your details to begin</p>
@@ -172,9 +169,16 @@ export default function AIInterview() {
                   </div>
                 )}
 
+                {speechRec.micAvailable === false && (
+                  <div className="p-3 rounded-xl bg-red-500/15 border border-red-400/30 text-red-300 text-sm">
+                    🎙️ Microphone not available — please allow mic access in your browser settings.
+                  </div>
+                )}
+
                 <button
                   onClick={() => setShowPermissions(true)}
-                  className="w-full py-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold rounded-xl hover:shadow-lg hover:shadow-purple-600/30 transition-all text-lg"
+                  disabled={speechRec.micAvailable === false}
+                  className="w-full py-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold rounded-xl hover:shadow-lg hover:shadow-purple-600/30 transition-all text-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   🚀 Start Voice Interview
                 </button>
@@ -189,7 +193,7 @@ export default function AIInterview() {
 
         <PermissionsModal
           isOpen={showPermissions}
-          onAllow={(mic, cam) => {
+          onAllow={() => {
             setShowPermissions(false);
             startInterview({ jobRole, experience, techStack });
           }}
@@ -204,10 +208,9 @@ export default function AIInterview() {
     );
   }
 
-  // ── Interview Active / Feedback Screen ──
+  // ── Interview Active / Feedback ──
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-indigo-950 to-slate-900">
-      {/* Header */}
       <header className="bg-white/5 backdrop-blur-xl border-b border-white/10 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <Link to="/dashboard" className="flex items-center gap-2">
@@ -239,12 +242,10 @@ export default function AIInterview() {
 
       <div className="max-w-7xl mx-auto px-4 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Panel — AI Avatar */}
           <div className="lg:col-span-1">
             <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 sticky top-24">
               <AIAvatar state={aiState} emotion={aiEmotion} />
 
-              {/* Status Bar — using ref-based check for real-time accuracy */}
               <div className="mt-4 space-y-2">
                 <div className={`p-2.5 rounded-xl text-center text-sm font-semibold transition-all ${
                   speechSynth.isSpeaking
@@ -270,9 +271,14 @@ export default function AIInterview() {
                     {statusMessage}
                   </div>
                 )}
+
+                {speechRec.micAvailable === false && (
+                  <div className="text-xs text-red-300/80 text-center p-2 bg-red-500/10 rounded-xl">
+                    🎙️ Microphone unavailable. Check browser permissions.
+                  </div>
+                )}
               </div>
 
-              {/* Microphone Status */}
               <div className="mt-4 flex justify-center">
                 <div className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition-all ${
                   speechRec.isListening
@@ -284,7 +290,6 @@ export default function AIInterview() {
                 </div>
               </div>
 
-              {/* Language badge */}
               <div className="mt-3 flex justify-center">
                 <div className="text-[11px] px-3 py-1 rounded-full bg-white/5 text-white/40 border border-white/10">
                   🌐 Alex matches your language
@@ -293,9 +298,7 @@ export default function AIInterview() {
             </div>
           </div>
 
-          {/* Center Panel — Conversation + Camera */}
           <div className="lg:col-span-2 space-y-4">
-            {/* Camera View — starts when interview is active */}
             <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-3 border border-white/10">
               <CameraView
                 isActive={interviewState === 'active'}
@@ -304,7 +307,6 @@ export default function AIInterview() {
               />
             </div>
 
-            {/* Conversation Log */}
             <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-5 border border-white/10 max-h-[400px] overflow-y-auto">
               <div className="space-y-3">
                 {messages.length === 0 && interviewState === 'configuring' && (
@@ -341,7 +343,6 @@ export default function AIInterview() {
               </div>
             </div>
 
-            {/* Interview Feedback Screen */}
             {interviewState === 'feedback' && feedback && (
               <div className="bg-gradient-to-br from-purple-600/20 via-blue-600/10 to-indigo-800/20 backdrop-blur-sm rounded-2xl p-6 border border-purple-500/20">
                 <h3 className="text-white font-bold text-xl mb-4">📊 Interview Feedback</h3>
@@ -370,9 +371,7 @@ export default function AIInterview() {
                     <p className="text-green-400 font-semibold text-sm mb-1">✅ Strong Areas</p>
                     <div className="flex flex-wrap gap-2">
                       {feedback.strongAreas.map((area, i) => (
-                        <span key={i} className="px-3 py-1 bg-green-500/15 text-green-300 text-xs rounded-full border border-green-400/30">
-                          {area}
-                        </span>
+                        <span key={i} className="px-3 py-1 bg-green-500/15 text-green-300 text-xs rounded-full border border-green-400/30">{area}</span>
                       ))}
                     </div>
                   </div>
@@ -383,9 +382,7 @@ export default function AIInterview() {
                     <p className="text-amber-400 font-semibold text-sm mb-1">📖 Areas to Improve</p>
                     <div className="flex flex-wrap gap-2">
                       {feedback.improvementAreas.map((area, i) => (
-                        <span key={i} className="px-3 py-1 bg-amber-500/15 text-amber-300 text-xs rounded-full border border-amber-400/30">
-                          {area}
-                        </span>
+                        <span key={i} className="px-3 py-1 bg-amber-500/15 text-amber-300 text-xs rounded-full border border-amber-400/30">{area}</span>
                       ))}
                     </div>
                   </div>
@@ -398,16 +395,10 @@ export default function AIInterview() {
                 )}
 
                 <div className="mt-6 flex gap-3">
-                  <button
-                    onClick={reset}
-                    className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold rounded-xl hover:shadow-lg hover:shadow-purple-600/30 transition"
-                  >
+                  <button onClick={reset} className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold rounded-xl hover:shadow-lg hover:shadow-purple-600/30 transition">
                     🔄 New Interview
                   </button>
-                  <button
-                    onClick={() => navigate('/dashboard')}
-                    className="flex-1 px-6 py-3 bg-white/10 text-white rounded-xl border border-white/20 hover:bg-white/20 font-bold transition"
-                  >
+                  <button onClick={() => navigate('/dashboard')} className="flex-1 px-6 py-3 bg-white/10 text-white rounded-xl border border-white/20 hover:bg-white/20 font-bold transition">
                     📋 Dashboard
                   </button>
                 </div>
@@ -417,7 +408,6 @@ export default function AIInterview() {
         </div>
       </div>
 
-      {/* Fixed floating reset button */}
       {interviewState === 'active' && (
         <div className="fixed bottom-6 right-6 z-50">
           <button

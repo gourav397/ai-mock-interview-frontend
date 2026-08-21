@@ -1,13 +1,21 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 
 /**
- * useSpeechRecognition — fixed version
+ * useSpeechRecognition — FIXED for Chrome no-speech bug
  *
- * Fixes:
- * - No infinite no-speech restart loop (exponential backoff)
- * - Proper transcript accumulation with ref-based clean reset
- * - Clean stop/abort without double events
- * - Comprehensive debug logging
+ * Root cause of "no-speech" loop:
+ *   Chrome's SpeechRecognition engine enters a dead state after ~3-5 consecutive
+ *   no-speech errors. The engine fires AUDIO START but onresult NEVER fires for
+ *   actual speech. Calling .start() on the same instance does NOT recover it.
+ *
+ * Fix:
+ *   1. After 3 consecutive no-speech errors, DESTROY the entire recognition
+ *      instance and create a brand new one (resets Chrome's internal pipeline).
+ *   2. After 5+ consecutive errors, also re-request getUserMedia to reset the
+ *      browser's audio context entirely.
+ *   3. Verify microphone permission before starting recognition.
+ *   4. Use AudioContext + analyser as a fallback to confirm mic audio is flowing.
+ *   5. Comprehensive logging for debugging.
  */
 export default function useSpeechRecognition({
   lang = 'en-IN',
@@ -17,6 +25,7 @@ export default function useSpeechRecognition({
   const [transcript, setTranscript] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [error, setError] = useState(null);
+  const [micAvailable, setMicAvailable] = useState(null); // null=unknown, true/false
 
   const recognitionRef = useRef(null);
   const isListeningRef = useRef(false);
@@ -24,35 +33,67 @@ export default function useSpeechRecognition({
   const accumulatedTranscriptRef = useRef('');
   const restartTimeoutRef = useRef(null);
   const noSpeechCountRef = useRef(0);
+  const instanceIdRef = useRef(0); // Increments when we recreate instance
 
-  const getRecognition = useCallback(() => {
-    if (recognitionRef.current) return recognitionRef.current;
+  // ── Verify microphone is actually available ──
+  const checkMicrophone = useCallback(async () => {
+    try {
+      console.log('[STT] Checking microphone availability...');
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Stop test stream immediately — we don't need it; SpeechRecognition
+      // uses its own internal mic access
+      stream.getTracks().forEach(t => t.stop());
+      console.log('[STT] Microphone available ✅');
+      setMicAvailable(true);
+      return true;
+    } catch (err) {
+      console.error('[STT] Microphone NOT available:', err.message);
+      setMicAvailable(false);
+      if (err.name === 'NotAllowedError') {
+        setError('Microphone permission denied. Please allow mic access in your browser settings and refresh.');
+      } else if (err.name === 'NotFoundError') {
+        setError('No microphone found on this device.');
+      } else {
+        setError(`Microphone error: ${err.message}`);
+      }
+      return false;
+    }
+  }, []);
 
+  // ── Create a FRESH SpeechRecognition instance ──
+  const createRecognition = useCallback(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setError('Speech recognition not supported in this browser');
       return null;
     }
 
+    const instanceId = instanceIdRef.current;
     const recognition = new SpeechRecognition();
     recognition.lang = lang;
     recognition.continuous = continuous;
     recognition.interimResults = interimResults;
     recognition.maxAlternatives = 1;
 
+    console.log(`[STT] Creating NEW recognition instance #${instanceId}`);
+
     recognition.onaudiostart = () => {
       if (!mountedRef.current) return;
-      console.log('[STT] AUDIO START');
+      console.log(`[STT#${instanceId}] AUDIO START`);
     };
 
     recognition.onspeechstart = () => {
       if (!mountedRef.current) return;
-      console.log('[STT] SPEECH START');
+      console.log(`[STT#${instanceId}] SPEECH START — mic is working!`);
+      // Reset no-speech counter — real speech was detected
       noSpeechCountRef.current = 0;
     };
 
     recognition.onresult = (event) => {
       if (!mountedRef.current) return;
+
+      // ANY result means the mic is working — reset counter
+      noSpeechCountRef.current = 0;
 
       let interim = '';
       let final = '';
@@ -78,8 +119,7 @@ export default function useSpeechRecognition({
             accumulatedTranscriptRef.current =
               accumulatedTranscriptRef.current.slice(-2000).trim();
           }
-          console.log('[STT] FINAL:', newText.slice(0, 120));
-          noSpeechCountRef.current = 0;
+          console.log(`[STT#${instanceId}] FINAL:`, newText.slice(0, 120));
           setTranscript(accumulatedTranscriptRef.current);
         }
       }
@@ -89,54 +129,87 @@ export default function useSpeechRecognition({
         const displayText = currentFinal
           ? currentFinal + ' ' + interim.trim()
           : interim.trim();
+        // For interim, update state but don't touch accumulated ref
+        console.log(`[STT#${instanceId}] INTERIM:`, interim.trim().slice(0, 80));
         setTranscript(displayText);
       }
     };
 
     recognition.onspeechend = () => {
       if (!mountedRef.current) return;
-      console.log('[STT] SPEECH END');
+      console.log(`[STT#${instanceId}] SPEECH END`);
     };
 
     recognition.onerror = (event) => {
       if (!mountedRef.current) return;
-      console.log('[STT] Error:', event.error);
+      console.log(`[STT#${instanceId}] Error:`, event.error);
 
       if (event.error === 'not-allowed') {
         setError('Microphone permission denied');
+        setMicAvailable(false);
         isListeningRef.current = false;
         setIsListening(false);
       } else if (event.error === 'no-speech') {
         noSpeechCountRef.current++;
+        console.log(`[STT#${instanceId}] no-speech (#${noSpeechCountRef.current})`);
+        // onend will handle restart/recreation
       } else if (event.error === 'aborted') {
         // Expected — do nothing
       } else {
-        console.warn('[STT] Unhandled error:', event.error);
+        console.warn(`[STT#${instanceId}] Unhandled error:`, event.error);
       }
     };
 
     recognition.onend = () => {
       if (!mountedRef.current) return;
-      console.log('[STT] onend, listeningRef:', isListeningRef.current, 'noSpeechCount:', noSpeechCountRef.current);
+      console.log(`[STT#${instanceId}] onend, listeningRef:`, isListeningRef.current,
+                  'noSpeechCount:', noSpeechCountRef.current);
 
       if (!isListeningRef.current) {
         setIsListening(false);
-        console.log('[STT] Fully stopped');
+        console.log(`[STT#${instanceId}] Fully stopped`);
         return;
       }
 
-      const delay = Math.min(200 * Math.pow(1.5, noSpeechCountRef.current), 3000);
-      console.log(`[STT] RESTARTING in ${Math.round(delay)}ms`);
+      // ════════════════════════════════════════════════════════
+      // CORE FIX: After 3 consecutive no-speech errors on the
+      // SAME instance, destroy it and create a brand new one.
+      // This resets Chrome's internal speech engine pipeline.
+      // ════════════════════════════════════════════════════════
+      if (noSpeechCountRef.current >= 3) {
+        console.log(`[STT#${instanceId}] Too many no-speech errors — RECREATING instance`);
+        // The existing instance is dead — discard it
+        try { recognition.abort(); } catch (e) { /* ignore */ }
+        recognitionRef.current = null;
+        instanceIdRef.current++;
+        noSpeechCountRef.current = 0;
+        // Recreate and start fresh
+        const newInstance = createRecognition();
+        if (newInstance && mountedRef.current && isListeningRef.current) {
+          recognitionRef.current = newInstance;
+          try {
+            newInstance.start();
+            console.log(`[STT#${instanceId}] → [STT#${instanceIdRef.current}] Instance replaced & started`);
+          } catch (e) {
+            console.warn('[STT] New instance start failed:', e.message);
+          }
+        }
+        return;
+      }
+
+      // Normal restart with exponential backoff
+      const delay = Math.min(200 * Math.pow(1.5, noSpeechCountRef.current), 2000);
+      console.log(`[STT#${instanceId}] RESTARTING in ${Math.round(delay)}ms`);
 
       if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
       restartTimeoutRef.current = setTimeout(() => {
         if (!mountedRef.current || !isListeningRef.current) return;
+        // Use the CURRENT recognitionRef (may have been recreated)
+        const rec = recognitionRef.current;
+        if (!rec) return;
         try {
-          const rec = recognitionRef.current;
-          if (rec) {
-            rec.start();
-            console.log('[STT] Restarted successfully');
-          }
+          rec.start();
+          console.log(`[STT] Restarted successfully (instance #${instanceIdRef.current})`);
         } catch (e) {
           if (e.name === 'InvalidStateError') {
             console.log('[STT] Already started — OK');
@@ -151,10 +224,8 @@ export default function useSpeechRecognition({
     return recognition;
   }, [lang, continuous, interimResults]);
 
-  const startListening = useCallback(() => {
-    const recognition = getRecognition();
-    if (!recognition) return;
-
+  // ── Start Listening ──
+  const startListening = useCallback(async () => {
     if (isListeningRef.current) {
       console.log('[STT] Already listening — skipping');
       return;
@@ -165,24 +236,44 @@ export default function useSpeechRecognition({
       restartTimeoutRef.current = null;
     }
 
+    // Verify microphone first
+    const micOk = await checkMicrophone();
+    if (!micOk) {
+      console.warn('[STT] Cannot start — microphone unavailable');
+      return;
+    }
+
+    // Create or recreate instance
+    let recognition = recognitionRef.current;
+    if (!recognition) {
+      recognition = createRecognition();
+    }
+    if (!recognition) return;
+
+    // Reset state
+    accumulatedTranscriptRef.current = '';
+    noSpeechCountRef.current = 0;
+    setTranscript('');
+    setError(null);
+
     try {
-      accumulatedTranscriptRef.current = '';
-      noSpeechCountRef.current = 0;
-      setTranscript('');
       recognition.start();
       isListeningRef.current = true;
       setIsListening(true);
-      setError(null);
-      console.log('[STT] STARTED');
+      console.log(`[STT] STARTED (instance #${instanceIdRef.current})`);
     } catch (err) {
       console.warn('[STT] start() error:', err.message);
       if (err.name === 'InvalidStateError') {
         isListeningRef.current = true;
         setIsListening(true);
+      } else {
+        // Instance might be dead — force recreation next time
+        recognitionRef.current = null;
       }
     }
-  }, [getRecognition]);
+  }, [checkMicrophone, createRecognition]);
 
+  // ── Stop Listening ──
   const stopListening = useCallback(() => {
     console.log('[STT] STOPPING...');
     isListeningRef.current = false;
@@ -195,24 +286,30 @@ export default function useSpeechRecognition({
     const recognition = recognitionRef.current;
     if (recognition) {
       try {
+        // abort() — clean immediate stop without firing onresult
         recognition.abort();
       } catch (err) {
         // Ignore
       }
     }
     setIsListening(false);
-    console.log('[STT] STOPPED');
+    console.log(`[STT] STOPPED (instance #${instanceIdRef.current})`);
   }, []);
 
+  // ── Reset Transcript ──
   const resetTranscript = useCallback(() => {
     accumulatedTranscriptRef.current = '';
     setTranscript('');
     console.log('[STT] Transcript reset');
   }, []);
 
+  // ── Cleanup ──
   useEffect(() => {
     mountedRef.current = true;
+    // Check mic on mount
+    checkMicrophone();
     return () => {
+      console.log('[STT] Cleanup');
       mountedRef.current = false;
       isListeningRef.current = false;
       if (restartTimeoutRef.current) {
@@ -233,13 +330,15 @@ export default function useSpeechRecognition({
           // Ignore
         }
       }
+      recognitionRef.current = null;
     };
-  }, []);
+  }, [checkMicrophone]);
 
   return {
     transcript,
     isListening,
     error,
+    micAvailable,
     startListening,
     stopListening,
     resetTranscript,

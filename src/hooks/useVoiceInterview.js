@@ -5,9 +5,6 @@ import useSpeechSynthesis from './useSpeechSynthesis';
 
 /**
  * useVoiceInterview — complete interview lifecycle
- *
- * Focuses on: STT, TTS, session management, API calls
- * Camera is handled by CameraView component (no duplication)
  */
 export default function useVoiceInterview() {
   const [sessionId, setSessionId] = useState(null);
@@ -28,7 +25,6 @@ export default function useVoiceInterview() {
   const speechRec = useSpeechRecognition({ lang: 'en-IN', continuous: true });
   const speechSynth = useSpeechSynthesis();
 
-  // ── Refs (always fresh in closures) ──
   const processingRef = useRef(false);
   const silenceTimerRef = useRef(null);
   const lastTranscriptHashRef = useRef('');
@@ -37,12 +33,10 @@ export default function useVoiceInterview() {
   const interviewActiveRef = useRef(false);
   const lastSentTranscriptRef = useRef('');
 
-  // Sync ref with state
   useEffect(() => {
     sessionIdRef.current = sessionId;
   }, [sessionId]);
 
-  // ── JWT helper ──
   const getToken = useCallback(() => {
     try {
       const storedUser = localStorage.getItem('user');
@@ -60,7 +54,6 @@ export default function useVoiceInterview() {
     return null;
   }, []);
 
-  // ── Cleanup on unmount ──
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -74,7 +67,7 @@ export default function useVoiceInterview() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Silence detection ──
+  // ── Silence detection — only fires when NO speech is happening and NEW transcript content appears ──
   useEffect(() => {
     if (
       interviewState !== 'active' ||
@@ -88,7 +81,7 @@ export default function useVoiceInterview() {
     const currentTranscript = speechRec.transcript;
     if (!currentTranscript || currentTranscript.trim().length < 5) return;
 
-    // Hash-based dedup: only act on NEW content
+    // Hash-based dedup: only process NEW content
     const hash = currentTranscript.slice(-300);
     if (hash === lastTranscriptHashRef.current) return;
     lastTranscriptHashRef.current = hash;
@@ -120,7 +113,6 @@ export default function useVoiceInterview() {
     isProcessing,
   ]);
 
-  // ── Start Interview ──
   const startInterview = useCallback(async (config) => {
     try {
       setError(null);
@@ -172,9 +164,9 @@ export default function useVoiceInterview() {
       setDifficulty(config?.difficulty || 'Medium');
       interviewActiveRef.current = true;
 
-      // Start STT
+      // Start listening — startInterview is async so .startListening() awaits mic check
       speechRec.resetTranscript();
-      speechRec.startListening();
+      await speechRec.startListening(); // await so we know mic is working
       lastTranscriptHashRef.current = '';
       lastSentTranscriptRef.current = '';
 
@@ -202,7 +194,6 @@ export default function useVoiceInterview() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobRole, experience, techStack, getToken]);
 
-  // ── Process User Speech ──
   const processUserSpeech = useCallback(async (text) => {
     if (processingRef.current || !sessionIdRef.current) {
       console.log('[VOICE] Blocked — already processing or no session');
@@ -215,7 +206,6 @@ export default function useVoiceInterview() {
       return;
     }
 
-    // Prevent duplicate send
     if (userText === lastSentTranscriptRef.current) {
       console.log('[VOICE] Duplicate — skipping');
       return;
@@ -247,7 +237,7 @@ export default function useVoiceInterview() {
         { timeout: 45000 }
       );
 
-      console.log('[AI] RESPONSE RECEIVED:', res.data?.type, 'success:', res.data?.success);
+      console.log('[AI] RESPONSE:', res.data?.type, 'success:', res.data?.success);
 
       if (!res.data.success) {
         throw new Error(res.data.message || 'Failed to process');
@@ -315,7 +305,6 @@ export default function useVoiceInterview() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [emotion, difficulty]);
 
-  // ── End Interview ──
   const endInterview = useCallback(async () => {
     console.log('[HOOK] Ending...');
     interviewActiveRef.current = false;
@@ -337,7 +326,6 @@ export default function useVoiceInterview() {
     setStatusMessage('Interview ended');
   }, []);
 
-  // ── Reset ──
   const reset = useCallback(() => {
     console.log('[HOOK] Resetting...');
     interviewActiveRef.current = false;
@@ -361,7 +349,6 @@ export default function useVoiceInterview() {
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
   }, [speechRec, speechSynth]);
 
-  // ── Update Emotion ──
   const updateEmotion = useCallback((newEmotion) => {
     if (newEmotion && newEmotion !== 'neutral') {
       setEmotion(newEmotion);
