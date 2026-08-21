@@ -40,7 +40,7 @@ export default function useVoiceInterview() {
       }
       // 2. Fallback: direct token key
       const directToken = localStorage.getItem('token');
-      if (directToken && directToken !== 'undefined' && directToken !== 'null') {
+      if (directToken && directToken !== 'undefined' && directToken !== 'null' && directToken !== '') {
         return directToken;
       }
     } catch (e) {
@@ -116,6 +116,8 @@ export default function useVoiceInterview() {
 
       setStatusMessage('🎙️ Starting voice interview...');
 
+      // Use the shared API instance — the interceptor will handle the Authorization header.
+      // Do NOT pass a manual Authorization header to avoid any override conflicts.
       const res = await API.post(
         '/ai-interview/voice/start',
         {
@@ -123,10 +125,8 @@ export default function useVoiceInterview() {
           difficulty: config?.difficulty || 'Medium',
           techStack: tech,
           experience: exp,
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` },
         }
+        // No manual headers — let the interceptor set Authorization
       );
 
       if (!res.data.success) {
@@ -180,8 +180,7 @@ export default function useVoiceInterview() {
     speechRec.stopListening();
 
     try {
-      const token = getToken();
-
+      // No manual headers — let the interceptor handle Authorization
       const res = await API.post(
         '/ai-interview/voice/chat',
         {
@@ -190,10 +189,7 @@ export default function useVoiceInterview() {
           emotion,
           isFinal: true,
         },
-        {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          timeout: 45000,
-        }
+        { timeout: 45000 }
       );
 
       if (!res.data.success) {
@@ -243,7 +239,7 @@ export default function useVoiceInterview() {
       speechRec.startListening();
       setStatusMessage('');
     }
-  }, [sessionId, speechRec, speechSynth, emotion, difficulty, getToken]);
+  }, [sessionId, speechRec, speechSynth, emotion, difficulty]);
 
   // ── End Interview ──
   const endInterview = useCallback(async () => {
@@ -252,13 +248,8 @@ export default function useVoiceInterview() {
       speechSynth.stop();
 
       if (sessionId) {
-        const token = getToken();
-
-        const res = await API.post(
-          '/ai-interview/voice/end',
-          { sessionId },
-          { headers: token ? { Authorization: `Bearer ${token}` } : {} }
-        );
+        // No manual headers — let the interceptor handle Authorization
+        const res = await API.post('/ai-interview/voice/end', { sessionId });
         if (res.data?.feedback) {
           setFeedback(res.data.feedback);
         }
@@ -269,7 +260,7 @@ export default function useVoiceInterview() {
 
     setInterviewState('complete');
     setStatusMessage('✅ Interview ended');
-  }, [sessionId, speechRec, speechSynth, getToken]);
+  }, [sessionId, speechRec, speechSynth]);
 
   // ── Reset ──
   const reset = useCallback(() => {
