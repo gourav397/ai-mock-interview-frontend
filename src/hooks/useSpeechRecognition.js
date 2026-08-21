@@ -1,13 +1,19 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 
 /**
- * Enhanced useSpeechRecognition hook
- * - Single SpeechRecognition instance managed by ref
- * - Proper cleanup on unmount
- * - No duplicate event listeners
- * - Reliable start/stop/abort flow
+ * useSpeechRecognition — fixed version
+ *
+ * Fixes:
+ * - No infinite no-speech restart loop (exponential backoff)
+ * - Proper transcript accumulation with ref-based clean reset
+ * - Clean stop/abort without double events
+ * - Comprehensive debug logging
  */
-export default function useSpeechRecognition({ lang = 'en-IN', continuous = true, interimResults = true } = {}) {
+export default function useSpeechRecognition({
+  lang = 'en-IN',
+  continuous = true,
+  interimResults = true,
+} = {}) {
   const [transcript, setTranscript] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [error, setError] = useState(null);
@@ -15,8 +21,10 @@ export default function useSpeechRecognition({ lang = 'en-IN', continuous = true
   const recognitionRef = useRef(null);
   const isListeningRef = useRef(false);
   const mountedRef = useRef(true);
+  const accumulatedTranscriptRef = useRef('');
+  const restartTimeoutRef = useRef(null);
+  const noSpeechCountRef = useRef(0);
 
-  // Initialize SpeechRecognition once
   const getRecognition = useCallback(() => {
     if (recognitionRef.current) return recognitionRef.current;
 
@@ -32,7 +40,16 @@ export default function useSpeechRecognition({ lang = 'en-IN', continuous = true
     recognition.interimResults = interimResults;
     recognition.maxAlternatives = 1;
 
-    let finalTranscript = '';
+    recognition.onaudiostart = () => {
+      if (!mountedRef.current) return;
+      console.log('[STT] AUDIO START');
+    };
+
+    recognition.onspeechstart = () => {
+      if (!mountedRef.current) return;
+      console.log('[STT] SPEECH START');
+      noSpeechCountRef.current = 0;
+    };
 
     recognition.onresult = (event) => {
       if (!mountedRef.current) return;
@@ -50,59 +67,84 @@ export default function useSpeechRecognition({ lang = 'en-IN', continuous = true
       }
 
       if (final) {
-        finalTranscript += ' ' + final;
-        // Trim and keep the last ~1000 chars to avoid memory bloat
-        if (finalTranscript.length > 1000) {
-          finalTranscript = finalTranscript.slice(-1000);
+        const newText = final.trim();
+        if (newText) {
+          accumulatedTranscriptRef.current =
+            (accumulatedTranscriptRef.current
+              ? accumulatedTranscriptRef.current + ' ' + newText
+              : newText)
+              .trim();
+          if (accumulatedTranscriptRef.current.length > 2000) {
+            accumulatedTranscriptRef.current =
+              accumulatedTranscriptRef.current.slice(-2000).trim();
+          }
+          console.log('[STT] FINAL:', newText.slice(0, 120));
+          noSpeechCountRef.current = 0;
+          setTranscript(accumulatedTranscriptRef.current);
         }
-        setTranscript(finalTranscript.trim());
-      } else if (interim) {
-        // For interim results, append to current transcript for real-time feel
-        setTranscript(prev => {
-          // Keep the final part, replace the interim part
-          const finalPart = finalTranscript.trim();
-          return finalPart ? finalPart + ' ' + interim : interim;
-        });
       }
+
+      if (interim) {
+        const currentFinal = accumulatedTranscriptRef.current;
+        const displayText = currentFinal
+          ? currentFinal + ' ' + interim.trim()
+          : interim.trim();
+        setTranscript(displayText);
+      }
+    };
+
+    recognition.onspeechend = () => {
+      if (!mountedRef.current) return;
+      console.log('[STT] SPEECH END');
     };
 
     recognition.onerror = (event) => {
       if (!mountedRef.current) return;
-      console.warn('[STT] Error:', event.error);
+      console.log('[STT] Error:', event.error);
 
       if (event.error === 'not-allowed') {
         setError('Microphone permission denied');
-        setIsListening(false);
         isListeningRef.current = false;
+        setIsListening(false);
       } else if (event.error === 'no-speech') {
-        // No speech detected — just restart silently if we're supposed to be listening
-        if (isListeningRef.current && mountedRef.current) {
-          try { recognition.start(); } catch (e) { /* ignore */ }
-        }
+        noSpeechCountRef.current++;
       } else if (event.error === 'aborted') {
-        // Expected when we call stop() — do nothing
+        // Expected — do nothing
       } else {
-        setError(`Recognition error: ${event.error}`);
-        setIsListening(false);
-        isListeningRef.current = false;
+        console.warn('[STT] Unhandled error:', event.error);
       }
     };
 
     recognition.onend = () => {
       if (!mountedRef.current) return;
-      console.log('[STT] onend fired, isListeningRef:', isListeningRef.current);
-      // Auto-restart if we're supposed to be listening (continuous mode)
-      if (isListeningRef.current && mountedRef.current) {
+      console.log('[STT] onend, listeningRef:', isListeningRef.current, 'noSpeechCount:', noSpeechCountRef.current);
+
+      if (!isListeningRef.current) {
+        setIsListening(false);
+        console.log('[STT] Fully stopped');
+        return;
+      }
+
+      const delay = Math.min(200 * Math.pow(1.5, noSpeechCountRef.current), 3000);
+      console.log(`[STT] RESTARTING in ${Math.round(delay)}ms`);
+
+      if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
+      restartTimeoutRef.current = setTimeout(() => {
+        if (!mountedRef.current || !isListeningRef.current) return;
         try {
-          recognition.start();
+          const rec = recognitionRef.current;
+          if (rec) {
+            rec.start();
+            console.log('[STT] Restarted successfully');
+          }
         } catch (e) {
-          if (e.name !== 'InvalidStateError') {
-            console.warn('[STT] Restart error:', e.message);
+          if (e.name === 'InvalidStateError') {
+            console.log('[STT] Already started — OK');
+          } else {
+            console.warn('[STT] Restart failed:', e.message);
           }
         }
-      } else {
-        setIsListening(false);
-      }
+      }, delay);
     };
 
     recognitionRef.current = recognition;
@@ -114,11 +156,18 @@ export default function useSpeechRecognition({ lang = 'en-IN', continuous = true
     if (!recognition) return;
 
     if (isListeningRef.current) {
-      console.log('[STT] Already listening — skipping start');
+      console.log('[STT] Already listening — skipping');
       return;
     }
 
+    if (restartTimeoutRef.current) {
+      clearTimeout(restartTimeoutRef.current);
+      restartTimeoutRef.current = null;
+    }
+
     try {
+      accumulatedTranscriptRef.current = '';
+      noSpeechCountRef.current = 0;
       setTranscript('');
       recognition.start();
       isListeningRef.current = true;
@@ -128,7 +177,6 @@ export default function useSpeechRecognition({ lang = 'en-IN', continuous = true
     } catch (err) {
       console.warn('[STT] start() error:', err.message);
       if (err.name === 'InvalidStateError') {
-        // Already started — this is fine
         isListeningRef.current = true;
         setIsListening(true);
       }
@@ -136,37 +184,50 @@ export default function useSpeechRecognition({ lang = 'en-IN', continuous = true
   }, [getRecognition]);
 
   const stopListening = useCallback(() => {
+    console.log('[STT] STOPPING...');
     isListeningRef.current = false;
-    const recognition = recognitionRef.current;
-    if (!recognition) return;
 
-    try {
-      recognition.stop();
-      // Also abort to prevent onend from auto-restarting
-      recognition.abort();
-    } catch (err) {
-      // Ignore errors during stop
+    if (restartTimeoutRef.current) {
+      clearTimeout(restartTimeoutRef.current);
+      restartTimeoutRef.current = null;
+    }
+
+    const recognition = recognitionRef.current;
+    if (recognition) {
+      try {
+        recognition.abort();
+      } catch (err) {
+        // Ignore
+      }
     }
     setIsListening(false);
     console.log('[STT] STOPPED');
   }, []);
 
   const resetTranscript = useCallback(() => {
+    accumulatedTranscriptRef.current = '';
     setTranscript('');
+    console.log('[STT] Transcript reset');
   }, []);
 
-  // Cleanup on unmount
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       isListeningRef.current = false;
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+        restartTimeoutRef.current = null;
+      }
       const recognition = recognitionRef.current;
       if (recognition) {
         try {
           recognition.onend = null;
           recognition.onresult = null;
           recognition.onerror = null;
+          recognition.onaudiostart = null;
+          recognition.onspeechstart = null;
+          recognition.onspeechend = null;
           recognition.abort();
         } catch (e) {
           // Ignore

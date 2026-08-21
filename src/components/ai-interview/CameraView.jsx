@@ -1,32 +1,49 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 
 /**
- * CameraView — Webcam access with lightweight emotion/attention detection.
- * Uses Canvas-based face tracking (no ML models for speed/performance).
- * Provides approximate engagement cues without claiming medical-grade accuracy.
+ * CameraView — self-contained camera component
+ *
+ * Manages its own getUserMedia lifecycle so there's no conflict with the hook.
+ * Props:
+ *   isActive {boolean} — start/stop camera based on interview state
+ *   mirror {boolean} — flip preview horizontally (default true)
+ *   onEmotionChange {function} — optional callback for detected emotion
  */
-export default function CameraView({
-  isActive = false,
-  onEmotionChange,
-  onFaceDetected,
-  mirror = true,
-}) {
+export default function CameraView({ isActive = false, mirror = true, onEmotionChange = null }) {
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState(null);
   const videoRef = useRef(null);
-  const canvasRef = useRef(null);
   const streamRef = useRef(null);
-  const animFrameRef = useRef(null);
-  const [hasPermission, setHasPermission] = useState(null); // null=loading, true, false
-  const [isCameraOn, setIsCameraOn] = useState(false);
-  const [error, setError] = useState(null);
-  const [userState, setUserState] = useState('unknown');
-  // unknown | looking | not-looking | speaking | confused | smiling
-  const lastMotionRef = useRef([]);
-  const motionIdxRef = useRef(0);
+  const mountedRef = useRef(true);
 
-  // ── Start Camera ──
+  // Cleanup function
+  const stopCamera = useCallback(() => {
+    console.log('[CameraView] Stopping camera');
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => {
+        track.stop();
+        console.log('[CameraView] Track stopped:', track.kind);
+      });
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setCameraActive(false);
+  }, []);
+
+  // Start camera
   const startCamera = useCallback(async () => {
+    if (!mountedRef.current) return false;
+
+    // Already have a stream
+    if (streamRef.current) {
+      console.log('[CameraView] Already have stream');
+      return true;
+    }
+
+    console.log('[CameraView] Requesting camera...');
     try {
-      setError(null);
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           width: { ideal: 320 },
@@ -36,274 +53,168 @@ export default function CameraView({
         audio: false,
       });
 
+      if (!mountedRef.current) {
+        stream.getTracks().forEach(t => t.stop());
+        return false;
+      }
+
+      streamRef.current = stream;
+      console.log('[CameraView] Stream obtained, tracks:', stream.getTracks().length);
+
+      // Attach to video
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        streamRef.current = stream;
-        setHasPermission(true);
-        setIsCameraOn(true);
-      }
-    } catch (err) {
-      console.log('Camera access error:', err.message);
-      setHasPermission(false);
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setError('Camera permission denied. Voice-only mode active.');
+        console.log('[CameraView] Stream attached to video');
+        // Chrome workaround — re-assign after short delay
+        setTimeout(() => {
+          if (videoRef.current && streamRef.current) {
+            videoRef.current.srcObject = streamRef.current;
+          }
+        }, 200);
       } else {
-        setError('Camera unavailable. Voice-only mode active.');
+        console.warn('[CameraView] videoRef null at attach time — will retry');
+        // Retry after mount
+        setTimeout(() => {
+          if (videoRef.current && streamRef.current && mountedRef.current) {
+            videoRef.current.srcObject = streamRef.current;
+            console.log('[CameraView] Stream attached (delayed)');
+          }
+        }, 500);
       }
+
+      setCameraActive(true);
+      setCameraError(null);
+      return true;
+    } catch (err) {
+      console.warn('[CameraView] Error:', err.name, err.message);
+      setCameraActive(false);
+      if (err.name === 'NotAllowedError') {
+        setCameraError('Camera permission denied. You can still continue without video.');
+      } else if (err.name === 'NotFoundError') {
+        setCameraError('No camera found on this device.');
+      } else {
+        setCameraError(`Camera error: ${err.message}`);
+      }
+      return false;
     }
   }, []);
 
-  // ── Stop Camera ──
-  const stopCamera = useCallback(() => {
-    if (animFrameRef.current) {
-      cancelAnimationFrame(animFrameRef.current);
-      animFrameRef.current = null;
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    setIsCameraOn(false);
-  }, []);
-
-  // ── Toggle ──
+  // React to isActive prop changes
   useEffect(() => {
-    if (isActive && hasPermission === null) {
-      startCamera();
-    } else if (!isActive && isCameraOn) {
+    mountedRef.current = true;
+
+    if (isActive) {
+      // Small delay to let the page render
+      const timer = setTimeout(() => {
+        if (mountedRef.current) startCamera();
+      }, 300);
+      return () => clearTimeout(timer);
+    } else {
       stopCamera();
     }
-  }, [isActive, hasPermission, startCamera, stopCamera, isCameraOn]);
-
-  // ── Lightweight Face Tracking (no ML, just motion detection) ──
-  useEffect(() => {
-    if (!isActive || !hasPermission || !videoRef.current) return;
-
-    let frameCount = 0;
-    let emotionHistory = [];
-
-    const trackFace = () => {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      if (!video || !canvas || video.readyState < 2) {
-        animFrameRef.current = requestAnimationFrame(trackFace);
-        return;
-      }
-
-      frameCount++;
-      const ctx = canvas.getContext('2d');
-      canvas.width = video.videoWidth || 320;
-      canvas.height = video.videoHeight || 240;
-
-      // Draw current frame
-      ctx.save();
-      if (mirror) {
-        ctx.translate(canvas.width, 0);
-        ctx.scale(-1, 1);
-      }
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      ctx.restore();
-
-      // ── Simple motion-based engagement detection ──
-      if (frameCount % 5 === 0) {
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageData.data;
-
-        // Sample brightness at center region (where face would be)
-        const centerX = Math.floor(canvas.width * 0.45);
-        const centerY = Math.floor(canvas.height * 0.35);
-        const sampleSizeW = Math.floor(canvas.width * 0.1);
-        const sampleSizeH = Math.floor(canvas.height * 0.12);
-
-        let avgBrightness = 0;
-        let pixelCount = 0;
-
-        for (let y = centerY; y < centerY + sampleSizeH && y < canvas.height; y++) {
-          for (let x = centerX; x < centerX + sampleSizeW && x < canvas.width; x++) {
-            const idx = (y * canvas.width + x) * 4;
-            avgBrightness += (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
-            pixelCount++;
-          }
-        }
-        avgBrightness = pixelCount > 0 ? avgBrightness / pixelCount : 0;
-
-        // Track motion by brightness variance
-        lastMotionRef.current[motionIdxRef.current % 10] = avgBrightness;
-        motionIdxRef.current++;
-
-        if (lastMotionRef.current.filter(v => v !== undefined).length > 3) {
-          const variance = calculateVariance(lastMotionRef.current.filter(v => v !== undefined));
-          const isLooking = variance > 3 && avgBrightness > 30;
-
-          // Simple emotion hint based on mouth position (lip brightness difference)
-          const mouthY = Math.floor(canvas.height * 0.55);
-          const mouthSample = Math.floor(canvas.width * 0.1);
-          let mouthBrightness = 0;
-          let mouthCount = 0;
-
-          for (let x = Math.floor(canvas.width * 0.4); x < Math.floor(canvas.width * 0.6); x++) {
-            const idx = (mouthY * canvas.width + x) * 4;
-            mouthBrightness += (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
-            mouthCount++;
-          }
-
-          const mouthAvg = mouthCount > 0 ? mouthBrightness / mouthCount : 128;
-
-          // Determine approximate state
-          let detectedState = 'unknown';
-
-          if (!isLooking) {
-            detectedState = 'not-looking';
-          } else if (mouthAvg < 60) {
-            detectedState = 'speaking';
-          } else if (mentionDetected(data, canvas.width, canvas.height)) {
-            detectedState = 'confused';
-          } else {
-            detectedState = 'looking';
-          }
-
-          setUserState(detectedState);
-
-          // Map to emotion for AI
-          emotionHistory.push(detectedState);
-          if (emotionHistory.length > 10) emotionHistory.shift();
-
-          if (emotionHistory.length >= 5) {
-            const dominant = getDominantState(emotionHistory);
-            const emotionMap = {
-              'looking': 'neutral',
-              'speaking': 'neutral',
-              'not-looking': 'neutral',
-              'confused': 'surprised',
-            };
-            if (onEmotionChange) {
-              onEmotionChange(emotionMap[dominant] || 'neutral');
-            }
-          }
-        }
-      }
-
-      // Draw indicators on canvas
-      ctx.strokeStyle = 'rgba(168, 85, 247, 0.3)';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(
-        mirror ? canvas.width - centerX - sampleSizeW : centerX,
-        centerY,
-        sampleSizeW,
-        sampleSizeH
-      );
-
-      animFrameRef.current = requestAnimationFrame(trackFace);
-    };
-
-    animFrameRef.current = requestAnimationFrame(trackFace);
 
     return () => {
-      if (animFrameRef.current) {
-        cancelAnimationFrame(animFrameRef.current);
-      }
+      mountedRef.current = false;
     };
-  }, [isActive, hasPermission, mirror, onEmotionChange]);
+  }, [isActive, startCamera, stopCamera]);
 
-  // ── Cleanup on unmount ──
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
+      mountedRef.current = false;
       stopCamera();
     };
   }, [stopCamera]);
 
-  // ── Render ──
-  if (hasPermission === false) {
-    return (
-      <div className="rounded-xl bg-white/5 border border-amber-500/20 p-4 text-center">
-        <div className="text-3xl mb-2">🎙️</div>
-        <p className="text-amber-300/70 text-sm">{error || 'Camera not available'}</p>
-        <p className="text-white/40 text-xs mt-1">Voice-only mode active</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="relative rounded-xl overflow-hidden bg-gray-900/60 border border-white/10">
-      {/* Video (hidden, used for canvas processing) */}
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        className="hidden"
-      />
+    <div className="camera-view-wrapper">
+      <div className="camera-container" style={{
+        position: 'relative',
+        width: '100%',
+        maxWidth: '320px',
+        margin: '0 auto',
+        borderRadius: '12px',
+        overflow: 'hidden',
+        backgroundColor: '#1a1a2e',
+        aspectRatio: '4/3',
+      }}>
+        <video
+          ref={videoRef}
+          autoPlay
+          muted
+          playsInline
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            transform: mirror ? 'scaleX(-1)' : 'none',
+            display: cameraActive ? 'block' : 'none',
+          }}
+        />
 
-      {/* Canvas overlay */}
-      <canvas
-        ref={canvasRef}
-        className="w-full aspect-[4/3] object-cover"
-        style={{ transform: mirror ? 'scaleX(-1)' : 'none' }}
-      />
+        {!cameraActive && (
+          <div className="camera-placeholder" style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#666',
+            fontSize: '14px',
+            padding: '20px',
+            textAlign: 'center',
+          }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="1.5">
+              <path d="M23 7l-7 5 7 5V7z" />
+              <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+            </svg>
+            <p style={{ marginTop: '8px', color: '#888' }}>
+              {cameraError || (isActive ? 'Starting camera...' : 'Camera inactive')}
+            </p>
+          </div>
+        )}
 
-      {/* User state indicator */}
-      <div className="absolute bottom-2 left-2 right-2 flex justify-between items-center">
-        <div className={`px-2 py-1 rounded-md text-[10px] font-semibold backdrop-blur-sm ${
-          userState === 'looking'
-            ? 'bg-green-500/30 text-green-300'
-            : userState === 'speaking'
-            ? 'bg-blue-500/30 text-blue-300'
-            : userState === 'confused'
-            ? 'bg-amber-500/30 text-amber-300'
-            : userState === 'not-looking'
-            ? 'bg-red-500/20 text-red-300'
-            : 'bg-white/10 text-white/40'
-        }`}>
-          {userState === 'looking' && '👀 Attentive'}
-          {userState === 'speaking' && '🎤 Speaking'}
-          {userState === 'confused' && '🤔 Confused'}
-          {userState === 'not-looking' && '👁️ Not looking'}
-          {userState === 'unknown' && '⏳ Detecting...'}
-        </div>
-
-        <div className="px-2 py-1 rounded-md bg-white/10 text-[10px] text-white/50 backdrop-blur-sm">
-          📷 Camera
-        </div>
+        {/* Recording indicator */}
+        {cameraActive && (
+          <div style={{
+            position: 'absolute',
+            top: '8px',
+            right: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '4px 10px',
+            borderRadius: '20px',
+            backgroundColor: 'rgba(0,0,0,0.6)',
+            fontSize: '11px',
+            color: '#4ade80',
+          }}>
+            <span style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              backgroundColor: '#4ade80',
+              animation: cameraActive ? 'pulse 1.5s infinite' : 'none',
+            }} />
+            Camera
+          </div>
+        )}
       </div>
+
+      {/* Simple emotion status (optional visual feedback) */}
+      {cameraActive && onEmotionChange && (
+        <div style={{ textAlign: 'center', marginTop: '4px', fontSize: '11px', color: '#888' }}>
+          Camera active
+        </div>
+      )}
+
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
+      `}</style>
     </div>
   );
-}
-
-// ── Helpers ──
-function calculateVariance(values) {
-  const mean = values.reduce((a, b) => a + b, 0) / values.length;
-  const variance = values.reduce((a, b) => a + (b - mean) ** 2, 0) / values.length;
-  return variance;
-}
-
-function getDominantState(states) {
-  const counts = {};
-  states.forEach(s => { counts[s] = (counts[s] || 0) + 1; });
-  return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'looking';
-}
-
-function mentionDetected(data, width, height) {
-  // Rough proxy for "confused" expression: high contrast around brow area
-  const browY = Math.floor(height * 0.3);
-  const browX = Math.floor(width * 0.35);
-  const sampleSize = Math.floor(width * 0.02);
-
-  let topVals = [], bottomVals = [];
-  for (let x = 0; x < sampleSize; x++) {
-    const idxTop = ((browY - 3) * width + browX + x) * 4;
-    const idxBot = ((browY + 3) * width + browX + x) * 4;
-    if (idxTop >= 0 && idxBot < data.length) {
-      topVals.push((data[idxTop] + data[idxTop + 1] + data[idxTop + 2]) / 3);
-      bottomVals.push((data[idxBot] + data[idxBot + 1] + data[idxBot + 2]) / 3);
-    }
-  }
-
-  if (topVals.length < 2) return false;
-  const topAvg = topVals.reduce((a, b) => a + b, 0) / topVals.length;
-  const botAvg = bottomVals.reduce((a, b) => a + b, 0) / bottomVals.length;
-  // High brow contrast might indicate confusion
-  return Math.abs(topAvg - botAvg) > 25;
 }

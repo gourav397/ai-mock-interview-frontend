@@ -8,7 +8,6 @@ import useVoiceInterview from '../hooks/useVoiceInterview';
 export default function AIInterview() {
   const navigate = useNavigate();
   const {
-    // State
     interviewState,
     statusMessage,
     error,
@@ -18,17 +17,11 @@ export default function AIInterview() {
     isProcessing,
     lastAiMessage,
     emotion,
-
-    // Config
     jobRole, setJobRole,
     experience, setExperience,
     techStack, setTechStack,
-
-    // Sub-hooks
     speechRec,
     speechSynth,
-
-    // Actions
     startInterview,
     processUserSpeech,
     endInterview,
@@ -37,12 +30,11 @@ export default function AIInterview() {
   } = useVoiceInterview();
 
   const [showPermissions, setShowPermissions] = useState(false);
-  const [micAllowed, setMicAllowed] = useState(false);
-  const [cameraAllowed, setCameraAllowed] = useState(false);
   const [messages, setMessages] = useState([]);
   const [aiState, setAiState] = useState('idle');
   const [aiEmotion, setAiEmotion] = useState('neutral');
   const messageEndRef = useRef(null);
+  const processedMessageHashes = useRef(new Set());
 
   const experienceLevels = [
     'Fresher',
@@ -52,50 +44,48 @@ export default function AIInterview() {
     'Lead (10+ yrs)',
   ];
 
-  // Track messages
+  // ── Track AI messages (deduplicated) ──
   useEffect(() => {
-    if (lastAiMessage && interviewState === 'active') {
-      setMessages(prev => {
-        const exists = prev.some(m => m.content === lastAiMessage && m.role === 'ai');
-        if (exists) return prev;
-        return [...prev, { role: 'ai', content: lastAiMessage }];
-      });
+    if (lastAiMessage && (interviewState === 'active' || interviewState === 'feedback')) {
+      const hash = lastAiMessage.slice(0, 100);
+      if (!processedMessageHashes.current.has(hash)) {
+        processedMessageHashes.current.add(hash);
+        setMessages(prev => [...prev, { role: 'ai', content: lastAiMessage }]);
+      }
     }
   }, [lastAiMessage, interviewState]);
 
-  // Track user speech
+  // ── Update AI visual state (use ref-based checks for accuracy) ──
   useEffect(() => {
-    if (speechRec.transcript && interviewState === 'active') {
-      const text = speechRec.transcript;
-      setMessages(prev => {
-        const exists = prev.some(m => m.content === text && m.role === 'user');
-        if (exists) return prev;
-        return [...prev, { role: 'user', content: text }];
-      });
-    }
-  }, [speechRec.transcript, interviewState]);
+    const interval = setInterval(() => {
+      if (speechSynth.isSpeakingRef.current) {
+        setAiState('speaking');
+        setAiEmotion('happy');
+      } else if (isProcessing) {
+        setAiState('thinking');
+        setAiEmotion('neutral');
+      } else if (speechRec.isListening && interviewState === 'active') {
+        setAiState('listening');
+        setAiEmotion('neutral');
+      } else if (interviewState === 'feedback') {
+        setAiState('idle');
+        setAiEmotion('neutral');
+      } else if (interviewState === 'active') {
+        setAiState('listening');
+        setAiEmotion('neutral');
+      } else {
+        setAiState('idle');
+        setAiEmotion('neutral');
+      }
+    }, 300);
+
+    return () => clearInterval(interval);
+  }, [speechSynth.isSpeakingRef, isProcessing, speechRec.isListening, interviewState]);
 
   // Scroll to bottom
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-
-  // Update AI visual state based on activity
-  useEffect(() => {
-    if (speechSynth.isSpeaking) {
-      setAiState('speaking');
-      setAiEmotion('happy');
-    } else if (isProcessing) {
-      setAiState('thinking');
-      setAiEmotion('neutral');
-    } else if (speechRec.isListening) {
-      setAiState('listening');
-      setAiEmotion(emotion === 'surprised' ? 'encouraging' : 'neutral');
-    } else {
-      setAiState('idle');
-      setAiEmotion('neutral');
-    }
-  }, [speechSynth.isSpeaking, isProcessing, speechRec.isListening, emotion]);
 
   // ── Config Screen ──
   if (interviewState === 'idle') {
@@ -200,19 +190,15 @@ export default function AIInterview() {
         <PermissionsModal
           isOpen={showPermissions}
           onAllow={(mic, cam) => {
-            setMicAllowed(mic);
-            setCameraAllowed(cam);
             setShowPermissions(false);
             startInterview({ jobRole, experience, techStack });
           }}
           onDeny={() => {
             setShowPermissions(false);
-            setMicAllowed(false);
-            setCameraAllowed(false);
             startInterview({ jobRole, experience, techStack });
           }}
-          cameraAllowed={cameraAllowed}
-          micAllowed={micAllowed}
+          cameraAllowed={false}
+          micAllowed={false}
         />
       </div>
     );
@@ -258,21 +244,25 @@ export default function AIInterview() {
             <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 sticky top-24">
               <AIAvatar state={aiState} emotion={aiEmotion} />
 
-              {/* Status Bar */}
+              {/* Status Bar — using ref-based check for real-time accuracy */}
               <div className="mt-4 space-y-2">
                 <div className={`p-2.5 rounded-xl text-center text-sm font-semibold transition-all ${
-                  aiState === 'speaking'
+                  speechSynth.isSpeaking
                     ? 'bg-purple-500/20 text-purple-300 border border-purple-400/30 animate-pulse'
-                    : aiState === 'listening'
-                    ? 'bg-blue-500/15 text-blue-300 border border-blue-400/20'
-                    : aiState === 'thinking'
+                    : isProcessing
                     ? 'bg-amber-500/15 text-amber-300 border border-amber-400/20'
+                    : speechRec.isListening && interviewState === 'active'
+                    ? 'bg-blue-500/15 text-blue-300 border border-blue-400/20'
+                    : interviewState === 'feedback'
+                    ? 'bg-green-500/15 text-green-300 border border-green-400/20'
                     : 'bg-white/5 text-white/50 border border-white/10'
                 }`}>
-                  {aiState === 'speaking' && '🎙️ Alex is speaking...'}
-                  {aiState === 'listening' && '👂 Listening...'}
-                  {aiState === 'thinking' && '🤔 Thinking...'}
-                  {aiState === 'idle' && '😊 Ready'}
+                  {speechSynth.isSpeaking && '🎙️ Alex is speaking...'}
+                  {!speechSynth.isSpeaking && isProcessing && '🤔 Thinking...'}
+                  {!speechSynth.isSpeaking && !isProcessing && speechRec.isListening && interviewState === 'active' && '👂 Listening...'}
+                  {!speechSynth.isSpeaking && !isProcessing && !speechRec.isListening && interviewState === 'active' && '⏳ Processing...'}
+                  {interviewState === 'feedback' && '✅ Interview Complete'}
+                  {interviewState === 'configuring' && '⚙️ Setting up...'}
                 </div>
 
                 {statusMessage && (
@@ -293,21 +283,26 @@ export default function AIInterview() {
                   {speechRec.isListening ? 'Mic Active' : 'Mic Off'}
                 </div>
               </div>
+
+              {/* Language badge */}
+              <div className="mt-3 flex justify-center">
+                <div className="text-[11px] px-3 py-1 rounded-full bg-white/5 text-white/40 border border-white/10">
+                  🌐 Alex matches your language
+                </div>
+              </div>
             </div>
           </div>
 
           {/* Center Panel — Conversation + Camera */}
           <div className="lg:col-span-2 space-y-4">
-            {/* Camera View (if allowed) */}
-            {cameraAllowed && (
-              <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-3 border border-white/10">
-                <CameraView
-                  isActive={interviewState === 'active'}
-                  onEmotionChange={updateEmotion}
-                  mirror={true}
-                />
-              </div>
-            )}
+            {/* Camera View — starts when interview is active */}
+            <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-3 border border-white/10">
+              <CameraView
+                isActive={interviewState === 'active'}
+                onEmotionChange={updateEmotion}
+                mirror={true}
+              />
+            </div>
 
             {/* Conversation Log */}
             <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-5 border border-white/10 max-h-[400px] overflow-y-auto">
@@ -370,37 +365,37 @@ export default function AIInterview() {
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  {feedback.strongAreas?.length > 0 && (
-                    <div>
-                      <p className="text-green-400 font-semibold text-sm mb-1">✅ Strong Areas</p>
-                      <div className="flex flex-wrap gap-2">
-                        {feedback.strongAreas.map((area, i) => (
-                          <span key={i} className="px-3 py-1 bg-green-500/15 text-green-300 text-xs rounded-full border border-green-400/30">
-                            {area}
-                          </span>
-                        ))}
-                      </div>
+                {feedback.strongAreas?.length > 0 && (
+                  <div className="mb-3">
+                    <p className="text-green-400 font-semibold text-sm mb-1">✅ Strong Areas</p>
+                    <div className="flex flex-wrap gap-2">
+                      {feedback.strongAreas.map((area, i) => (
+                        <span key={i} className="px-3 py-1 bg-green-500/15 text-green-300 text-xs rounded-full border border-green-400/30">
+                          {area}
+                        </span>
+                      ))}
                     </div>
-                  )}
+                  </div>
+                )}
 
-                  {feedback.improvementAreas?.length > 0 && (
-                    <div>
-                      <p className="text-amber-400 font-semibold text-sm mb-1">📖 Areas to Improve</p>
-                      <div className="flex flex-wrap gap-2">
-                        {feedback.improvementAreas.map((area, i) => (
-                          <span key={i} className="px-3 py-1 bg-amber-500/15 text-amber-300 text-xs rounded-full border border-amber-400/30">
-                            {area}
-                          </span>
-                        ))}
-                      </div>
+                {feedback.improvementAreas?.length > 0 && (
+                  <div className="mb-3">
+                    <p className="text-amber-400 font-semibold text-sm mb-1">📖 Areas to Improve</p>
+                    <div className="flex flex-wrap gap-2">
+                      {feedback.improvementAreas.map((area, i) => (
+                        <span key={i} className="px-3 py-1 bg-amber-500/15 text-amber-300 text-xs rounded-full border border-amber-400/30">
+                          {area}
+                        </span>
+                      ))}
                     </div>
-                  )}
+                  </div>
+                )}
 
-                  <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-400/20">
+                {feedback.recommendation && (
+                  <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-400/20 mb-4">
                     <p className="text-blue-200 text-sm"><b>💡 Recommendation:</b> {feedback.recommendation}</p>
                   </div>
-                </div>
+                )}
 
                 <div className="mt-6 flex gap-3">
                   <button
@@ -422,7 +417,7 @@ export default function AIInterview() {
         </div>
       </div>
 
-      {/* Force stop speaking / restart listening button */}
+      {/* Fixed floating reset button */}
       {interviewState === 'active' && (
         <div className="fixed bottom-6 right-6 z-50">
           <button
