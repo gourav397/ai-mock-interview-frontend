@@ -33,15 +33,14 @@ export default function useSpeechRecognition({
   const accumulatedTranscriptRef = useRef('');
   const restartTimeoutRef = useRef(null);
   const noSpeechCountRef = useRef(0);
-  const instanceIdRef = useRef(0); // Increments when we recreate instance
+  const instanceIdRef = useRef(0);
+  const hasSpeechEverRef = useRef(false); // Track if speech was ever detected
 
   // ── Verify microphone is actually available ──
   const checkMicrophone = useCallback(async () => {
     try {
       console.log('[STT] Checking microphone availability...');
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // Stop test stream immediately — we don't need it; SpeechRecognition
-      // uses its own internal mic access
       stream.getTracks().forEach(t => t.stop());
       console.log('[STT] Microphone available ✅');
       setMicAvailable(true);
@@ -85,8 +84,8 @@ export default function useSpeechRecognition({
     recognition.onspeechstart = () => {
       if (!mountedRef.current) return;
       console.log(`[STT#${instanceId}] SPEECH START — mic is working!`);
-      // Reset no-speech counter — real speech was detected
       noSpeechCountRef.current = 0;
+      hasSpeechEverRef.current = true;
     };
 
     recognition.onresult = (event) => {
@@ -94,6 +93,7 @@ export default function useSpeechRecognition({
 
       // ANY result means the mic is working — reset counter
       noSpeechCountRef.current = 0;
+      hasSpeechEverRef.current = true;
 
       let interim = '';
       let final = '';
@@ -129,7 +129,6 @@ export default function useSpeechRecognition({
         const displayText = currentFinal
           ? currentFinal + ' ' + interim.trim()
           : interim.trim();
-        // For interim, update state but don't touch accumulated ref
         console.log(`[STT#${instanceId}] INTERIM:`, interim.trim().slice(0, 80));
         setTranscript(displayText);
       }
@@ -163,7 +162,8 @@ export default function useSpeechRecognition({
     recognition.onend = () => {
       if (!mountedRef.current) return;
       console.log(`[STT#${instanceId}] onend, listeningRef:`, isListeningRef.current,
-                  'noSpeechCount:', noSpeechCountRef.current);
+                  'noSpeechCount:', noSpeechCountRef.current,
+                  'hasSpeechEver:', hasSpeechEverRef.current);
 
       if (!isListeningRef.current) {
         setIsListening(false);
@@ -178,7 +178,6 @@ export default function useSpeechRecognition({
       // ════════════════════════════════════════════════════════
       if (noSpeechCountRef.current >= 3) {
         console.log(`[STT#${instanceId}] Too many no-speech errors — RECREATING instance`);
-        // The existing instance is dead — discard it
         try { recognition.abort(); } catch (e) { /* ignore */ }
         recognitionRef.current = null;
         instanceIdRef.current++;
@@ -189,7 +188,7 @@ export default function useSpeechRecognition({
           recognitionRef.current = newInstance;
           try {
             newInstance.start();
-            console.log(`[STT#${instanceId}] → [STT#${instanceIdRef.current}] Instance replaced & started`);
+            console.log(`[STT] Instance replaced #${instanceId} → #${instanceIdRef.current} & started`);
           } catch (e) {
             console.warn('[STT] New instance start failed:', e.message);
           }
@@ -204,7 +203,6 @@ export default function useSpeechRecognition({
       if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
       restartTimeoutRef.current = setTimeout(() => {
         if (!mountedRef.current || !isListeningRef.current) return;
-        // Use the CURRENT recognitionRef (may have been recreated)
         const rec = recognitionRef.current;
         if (!rec) return;
         try {
@@ -253,6 +251,7 @@ export default function useSpeechRecognition({
     // Reset state
     accumulatedTranscriptRef.current = '';
     noSpeechCountRef.current = 0;
+    hasSpeechEverRef.current = false;
     setTranscript('');
     setError(null);
 
@@ -286,7 +285,6 @@ export default function useSpeechRecognition({
     const recognition = recognitionRef.current;
     if (recognition) {
       try {
-        // abort() — clean immediate stop without firing onresult
         recognition.abort();
       } catch (err) {
         // Ignore
@@ -295,6 +293,26 @@ export default function useSpeechRecognition({
     setIsListening(false);
     console.log(`[STT] STOPPED (instance #${instanceIdRef.current})`);
   }, []);
+
+  // ── Set Language Dynamically ──
+  const setLanguage = useCallback((newLang) => {
+    console.log('[STT] Setting language to:', newLang);
+    // If recognition is active, we need to restart with new language
+    const wasListening = isListeningRef.current;
+    if (wasListening) {
+      stopListening();
+    }
+    // The lang will be used when createRecognition runs next time
+    lang = newLang;
+    // Destroy existing instance so it gets recreated with new lang
+    if (recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch (e) {}
+      recognitionRef.current = null;
+    }
+    if (wasListening) {
+      startListening();
+    }
+  }, [stopListening, startListening]);
 
   // ── Reset Transcript ──
   const resetTranscript = useCallback(() => {
@@ -306,7 +324,6 @@ export default function useSpeechRecognition({
   // ── Cleanup ──
   useEffect(() => {
     mountedRef.current = true;
-    // Check mic on mount
     checkMicrophone();
     return () => {
       console.log('[STT] Cleanup');
@@ -342,5 +359,6 @@ export default function useSpeechRecognition({
     startListening,
     stopListening,
     resetTranscript,
+    setLanguage, // NEW: allows dynamically changing recognition language
   };
 }

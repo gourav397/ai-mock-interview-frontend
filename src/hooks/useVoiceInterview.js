@@ -5,6 +5,10 @@ import useSpeechSynthesis from './useSpeechSynthesis';
 
 /**
  * useVoiceInterview — complete interview lifecycle
+ * FIXED: No more silent failures. Every response produces output or visible error.
+ * FIXED: No duplicate transcript submissions.
+ * FIXED: Proper STT/TST coordination.
+ * FIXED: Backend errors are shown to user.
  */
 export default function useVoiceInterview() {
   const [sessionId, setSessionId] = useState(null);
@@ -25,6 +29,7 @@ export default function useVoiceInterview() {
   const speechRec = useSpeechRecognition({ lang: 'en-IN', continuous: true });
   const speechSynth = useSpeechSynthesis();
 
+  // ── Refs to avoid stale closures ──
   const processingRef = useRef(false);
   const silenceTimerRef = useRef(null);
   const lastTranscriptHashRef = useRef('');
@@ -32,6 +37,8 @@ export default function useVoiceInterview() {
   const sessionIdRef = useRef(null);
   const interviewActiveRef = useRef(false);
   const lastSentTranscriptRef = useRef('');
+  const pendingResponseRef = useRef(false); // Prevents duplicate processing
+  const sttRestartScheduledRef = useRef(false);
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -67,13 +74,21 @@ export default function useVoiceInterview() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Silence detection — only fires when NO speech is happening and NEW transcript content appears ──
+  // ── Silence detection: Only fires when:
+  //    1. Interview is active
+  //    2. Not currently processing
+  //    3. Alex is NOT speaking
+  //    4. STT is listening
+  //    5. Transcript has new content
+  //    6. A silence gap of 1.8s has passed
+  // ──
   useEffect(() => {
     if (
       interviewState !== 'active' ||
       isProcessing ||
       speechSynth.isSpeakingRef.current ||
-      !speechRec.isListening
+      !speechRec.isListening ||
+      pendingResponseRef.current
     ) {
       return;
     }
@@ -95,7 +110,7 @@ export default function useVoiceInterview() {
         console.log('[VOICE] Alex speaking — aborting silence callback');
         return;
       }
-      if (processingRef.current) return;
+      if (processingRef.current || pendingResponseRef.current) return;
       if (!speechRec.isListening) return;
 
       const textToSend = speechRec.transcript;
@@ -113,6 +128,7 @@ export default function useVoiceInterview() {
     isProcessing,
   ]);
 
+  // ── Start Interview ──
   const startInterview = useCallback(async (config) => {
     try {
       setError(null);
@@ -164,11 +180,15 @@ export default function useVoiceInterview() {
       setDifficulty(config?.difficulty || 'Medium');
       interviewActiveRef.current = true;
 
-      // Start listening — startInterview is async so .startListening() awaits mic check
+      // Reset state for fresh interview
       speechRec.resetTranscript();
-      await speechRec.startListening(); // await so we know mic is working
+      pendingResponseRef.current = false;
+      sttRestartScheduledRef.current = false;
       lastTranscriptHashRef.current = '';
       lastSentTranscriptRef.current = '';
+
+      // Start listening
+      await speechRec.startListening();
 
       // Speak greeting
       if (res.data.message) {
@@ -185,7 +205,7 @@ export default function useVoiceInterview() {
       if (status === 401) {
         setError('Session expired. Please login again.');
       } else if (status === 404) {
-        setError('Voice interview feature not available. Redeploy server.');
+        setError('Voice interview feature not available. Please try again later.');
       } else {
         setError(serverMsg || err.message || 'Failed to start interview');
       }
@@ -194,8 +214,9 @@ export default function useVoiceInterview() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobRole, experience, techStack, getToken]);
 
+  // ── Process User Speech ──
   const processUserSpeech = useCallback(async (text) => {
-    if (processingRef.current || !sessionIdRef.current) {
+    if (processingRef.current || !sessionIdRef.current || pendingResponseRef.current) {
       console.log('[VOICE] Blocked — already processing or no session');
       return;
     }
@@ -212,18 +233,25 @@ export default function useVoiceInterview() {
     }
 
     processingRef.current = true;
+    pendingResponseRef.current = true;
     setIsProcessing(true);
     setStatusMessage('Thinking...');
-    speechRec.stopListening();
-    lastSentTranscriptRef.current = userText;
+
+    // Stop STT while we process
+    if (speechRec.isListening) {
+      speechRec.stopListening();
+    }
 
     if (silenceTimerRef.current) {
       clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = null;
     }
 
+    lastSentTranscriptRef.current = userText;
+
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('[AI] SENDING USER MESSAGE:', userText.slice(0, 150));
+    console.log('[VOICE] Final transcript:', userText.slice(0, 200));
+    console.log('[VOICE] Sending transcript to backend...');
 
     try {
       const res = await API.post(
@@ -237,20 +265,41 @@ export default function useVoiceInterview() {
         { timeout: 45000 }
       );
 
-      console.log('[AI] RESPONSE:', res.data?.type, 'success:', res.data?.success);
+      console.log('[VOICE] Backend response received');
+      console.log('[VOICE] Response type:', res.data?.type);
+      console.log('[VOICE] Response success:', res.data?.success);
 
+      // ── Handle backend error ──
       if (!res.data.success) {
-        throw new Error(res.data.message || 'Failed to process');
+        console.log('[VOICE] Backend returned error:', res.data.message);
+        setError(res.data.message || 'Alex could not respond. Please try again.');
+        setStatusMessage('Error - tap mic to retry');
+        processingRef.current = false;
+        pendingResponseRef.current = false;
+        setIsProcessing(false);
+
+        // Restart STT after error
+        setTimeout(() => {
+          if (mountedRef.current && interviewActiveRef.current && !speechSynth.isSpeakingRef.current) {
+            speechRec.resetTranscript();
+            lastTranscriptHashRef.current = '';
+            speechRec.startListening();
+            setStatusMessage('Listening...');
+          }
+        }, 1500);
+        return;
       }
 
       setQuestionNumber(res.data.questionNumber || 0);
       setDifficulty(res.data.difficulty || difficulty);
 
-      // ── Interview complete ──
+      // ── Interview complete (feedback) ──
       if (res.data.type === 'feedback' || res.data.sessionComplete) {
         console.log('[AI] Interview COMPLETE');
         setLastAiMessage(res.data.message);
-        if (res.data.message) speechSynth.speak(res.data.message);
+        if (res.data.message) {
+          speechSynth.speak(res.data.message);
+        }
         setFeedback(res.data.feedback || null);
 
         const waitForFeedbackEnd = () => {
@@ -259,6 +308,7 @@ export default function useVoiceInterview() {
             setInterviewState('feedback');
             setStatusMessage('Interview complete!');
             processingRef.current = false;
+            pendingResponseRef.current = false;
             setIsProcessing(false);
           } else {
             setTimeout(waitForFeedbackEnd, 400);
@@ -268,43 +318,59 @@ export default function useVoiceInterview() {
         return;
       }
 
-      // ── Normal response ──
+      // ── Normal response — Alex speaks ──
       if (res.data.message) {
-        console.log('[TTS] START (AI response)');
+        console.log('[TTS] Speaking:', res.data.message.slice(0, 150));
         setLastAiMessage(res.data.message);
         speechSynth.speak(res.data.message);
       }
 
+      // Wait for TTS to finish, then restart STT
       const waitForTtsEnd = () => {
         if (!speechSynth.isSpeakingRef.current) {
-          console.log('[VOICE] Alex finished — restarting STT');
+          console.log('[STT] Restarting after Alex finished');
           speechRec.resetTranscript();
           lastTranscriptHashRef.current = '';
-          speechRec.startListening();
-          setIsProcessing(false);
+          pendingResponseRef.current = false;
           processingRef.current = false;
+          setIsProcessing(false);
           setStatusMessage('Listening...');
-          console.log('[VOICE] START LISTENING');
+
+          speechRec.startListening();
+          console.log('[STT] START LISTENING');
         } else {
           setTimeout(waitForTtsEnd, 350);
         }
       };
       setTimeout(waitForTtsEnd, 500);
+
     } catch (err) {
       console.error('[AI] Error:', err.message);
       const serverMsg = err.response?.data?.message;
-      setError(serverMsg || err.message || 'Failed to process response');
-      setIsProcessing(false);
+
+      // Show error to user
+      setError(serverMsg || err.message || 'Failed to process response. Please try again.');
+      setStatusMessage('Error occurred');
+
       processingRef.current = false;
-      speechRec.resetTranscript();
-      lastTranscriptHashRef.current = '';
-      speechRec.startListening();
-      setStatusMessage('Listening...');
-      console.log('[VOICE] Error recovery — listening restarted');
+      pendingResponseRef.current = false;
+      setIsProcessing(false);
+
+      // Restart STT after error
+      setTimeout(() => {
+        if (mountedRef.current && interviewActiveRef.current && !speechSynth.isSpeakingRef.current) {
+          speechRec.resetTranscript();
+          lastTranscriptHashRef.current = '';
+          speechRec.startListening();
+          setStatusMessage('Listening...');
+          console.log('[VOICE] Error recovery — listening restarted');
+        }
+      }, 2000);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [emotion, difficulty]);
 
+  // ── End Interview ──
   const endInterview = useCallback(async () => {
     console.log('[HOOK] Ending...');
     interviewActiveRef.current = false;
@@ -326,6 +392,7 @@ export default function useVoiceInterview() {
     setStatusMessage('Interview ended');
   }, []);
 
+  // ── Reset Everything ──
   const reset = useCallback(() => {
     console.log('[HOOK] Resetting...');
     interviewActiveRef.current = false;
@@ -343,12 +410,15 @@ export default function useVoiceInterview() {
     setLastAiMessage('');
     setEmotion(null);
     processingRef.current = false;
+    pendingResponseRef.current = false;
     lastTranscriptHashRef.current = '';
     lastSentTranscriptRef.current = '';
     sessionIdRef.current = null;
+    sttRestartScheduledRef.current = false;
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
   }, [speechRec, speechSynth]);
 
+  // ── Update Emotion ──
   const updateEmotion = useCallback((newEmotion) => {
     if (newEmotion && newEmotion !== 'neutral') {
       setEmotion(newEmotion);
