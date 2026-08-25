@@ -15,7 +15,17 @@ const categories = [
 "UPSC",
 "Railway",
 "Banking",
-"Defence"
+"Defence",
+"Mathematics",
+"Hindi",
+"English",
+"Haryana History",
+"Haryana Geography",
+"Haryana Polity",
+"Haryana Economy",
+"Haryana Culture & Heritage",
+"Haryana Environment",
+"Haryana Literature"
 
 ];
 
