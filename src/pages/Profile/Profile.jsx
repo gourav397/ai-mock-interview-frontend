@@ -61,7 +61,7 @@ function Profile() {
 
   const fetchResults = async (userId) => {
     try {
-      const res = await API.get(`/results/${userId}`);
+     const res = await API.get(`/api/results/${userId}`);
       setResults(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.log("Results fetch error:", err);
