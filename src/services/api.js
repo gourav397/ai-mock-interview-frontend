@@ -1,68 +1,65 @@
 import axios from "axios";
 
-const API = axios.create({
-  baseURL: "https://ai-interview-backend-production-6da2.up.railway.app/api",
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 60000,
   headers: { "Content-Type": "application/json" },
-  timeout: 300000, // 5 minutes (increased for voice processing)
 });
 
-// ── Request Interceptor ──
-// Automatically attaches JWT token from localStorage
-API.interceptors.request.use((config) => {
-  try {
-    let token = null;
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
-    // 1. First try: read from "user" object (primary method)
-    const storedUser = localStorage.getItem("user");
-    if (storedUser) {
-      const user = JSON.parse(storedUser);
-      token = user?.token || user?.accessToken || null;
-    }
-
-    // 2. Fallback: read directly from "token" key (for backward compatibility)
-    if (!token) {
-      token = localStorage.getItem("token");
-    }
-
-    // 3. Validate: ensure token is a real JWT (starts with eyJ), not "undefined" or "null"
-    if (token && typeof token === 'string' && token.startsWith('eyJ') && token.split('.').length === 3) {
-      config.headers.Authorization = `Bearer ${token}`;
-    } else if (token && token !== "undefined" && token !== "null" && token !== "") {
-      // Even if it doesn't look like a full JWT, trust the value
-      // (some tokens may not start with eyJ depending on encoding)
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-  } catch (e) {
-    console.warn("Auth interceptor: failed to parse user", e.message);
-  }
-  return config;
-});
-
-// ── Response Interceptor ──
-API.interceptors.response.use(
+api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Only logout on 401 if there's actually a token in localStorage
-    // (prevents logout on CORS preflight or other non-auth 401s)
-    if (error.response?.status === 401) {
-      const hasToken = localStorage.getItem("token") || (
-        (() => {
-          try {
-            const u = JSON.parse(localStorage.getItem("user") || "{}");
-            return !!u?.token;
-          } catch { return false; }
-        })()
-      );
-
-      if (hasToken) {
-        console.warn("Auth expired — clearing user");
-        localStorage.removeItem("user");
+    if (error.response) {
+      const { status, data } = error.response;
+      if (status === 401) {
         localStorage.removeItem("token");
-        window.location.href = "/login";
+        sessionStorage.removeItem("token");
+        if (!window.location.pathname.includes("/login")) window.location.href = "/login";
       }
+      error.message = data?.message || data?.error || `Request failed (${status})`;
+    } else if (error.request) {
+      error.message = "No response from server. Check your connection.";
     }
     return Promise.reject(error);
   }
 );
 
-export default API;
+const apiService = {
+  get: (url, config = {}) => api.get(url, config),
+  post: (url, data, config = {}) => api.post(url, data, config),
+  put: (url, data, config = {}) => api.put(url, data, config),
+  patch: (url, data, config = {}) => api.patch(url, data, config),
+  delete: (url, config = {}) => api.delete(url, config),
+
+  // IMAGE EDITOR OPERATIONS
+  uploadImage: (file, sessionId = null) => {
+    const formData = new FormData();
+    formData.append("image", file);
+    const headers = { "Content-Type": "multipart/form-data" };
+    if (sessionId) headers["X-Session-Id"] = sessionId;
+    return api.post("/api/image-editor/upload", formData, { headers });
+  },
+  applyFilter: (sessionId, filter) => api.post("/api/image-editor/filter", { sessionId, filter }),
+  applyAdjustments: (sessionId, adjustments) => api.post("/api/image-editor/adjust", { sessionId, adjustments }),
+  enhanceImage: (sessionId) => api.post("/api/image-editor/enhance", { sessionId }),
+  upscaleImage: (sessionId, factor = 2) => api.post("/api/image-editor/upscale", { sessionId, factor }),
+  removeBackground: (sessionId) => api.post("/api/image-editor/remove-bg", { sessionId }),
+  aiEditImage: (sessionId, instruction) => api.post("/api/image-editor/ai-edit", { sessionId, instruction }),
+  resetImage: (sessionId) => api.post("/api/image-editor/reset", { sessionId }),
+  getSession: (sessionId) => api.get(`/api/image-editor/session/${sessionId}`),
+  clearSession: (sessionId) => api.delete(`/api/image-editor/session/${sessionId}`),
+};
+
+export default apiService;
+export { api, API_BASE_URL };

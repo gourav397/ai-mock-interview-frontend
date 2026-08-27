@@ -8,6 +8,7 @@ const AIInterview = lazy(() => import('../pages/AIInterview'));
 import Home from "../pages/Home/Home";
 import Login from "../pages/Login/Login";
 import Register from "../pages/Register/Register";
+import ImageEditor from "../pages/ImageEditor";
 
 import Dashboard from "../pages/Dashboard/Dashboard";
 import Profile from "../pages/Profile/Profile";
@@ -55,6 +56,7 @@ function AppRoutes() {
         <Route path="/exam" element={<Exam />} />
         <Route path="/test/:category" element={<Test />} />
         <Route path="/result" element={<Result />} />
+        <Route path="/image-editor" element={<ImageEditor />} />
         <Route path="/history-detail/:id" element={<HistoryDetail />} />
 
         {/* Admin */}

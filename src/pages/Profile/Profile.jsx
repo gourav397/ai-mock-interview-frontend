@@ -571,6 +571,19 @@ function Profile() {
                 <span className="flex-1 text-white font-semibold text-sm">View History</span>
                 <span className="text-blue-300 group-hover:translate-x-1 transition-transform">→</span>
               </Link>
+
+              <Link
+  to="/image-editor"
+  className="flex items-center gap-3 p-4 rounded-xl bg-gradient-to-r from-pink-600/20 to-purple-600/20 border border-pink-400/20 hover:from-pink-600/40 hover:to-purple-600/40 transition-all duration-200 group"
+>
+  <span className="text-2xl">🖼️</span>
+  <span className="flex-1 text-white font-semibold text-sm">
+    AI Image Editor
+  </span>
+  <span className="text-pink-300 group-hover:translate-x-1 transition-transform">
+    →
+  </span>
+</Link>
             </div>
           </div>
         </div>
