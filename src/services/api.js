@@ -1,6 +1,8 @@
 // ============================================================
-// API SERVICE — Centralized API client for the entire application
+// API SERVICE — Centralized API client
 // PREMIUM: Handles auth, errors, multipart, image uploads
+// Image Editor endpoints are STATELESS: upload returns a server
+// filename, and every edit operation sends it back as `imagePath`.
 // ============================================================
 
 import axios from "axios";
@@ -42,7 +44,6 @@ api.interceptors.response.use(
       const { status, data } = error.response;
 
       if (status === 401) {
-        // Token expired — clear and redirect
         localStorage.removeItem("token");
         sessionStorage.removeItem("token");
         if (!window.location.pathname.includes("/login")) {
@@ -50,7 +51,6 @@ api.interceptors.response.use(
         }
       }
 
-      // Return meaningful error message
       const message =
         data?.message || data?.error || `Request failed (${status})`;
       error.message = message;
@@ -63,6 +63,17 @@ api.interceptors.response.use(
 );
 
 // ============================================
+// IMAGE EDITOR — URL helpers
+// ============================================
+
+// Server returns relative URLs like /api/image-editor/preview/<file>
+const absolutize = (url) => {
+  if (!url) return null;
+  if (url.startsWith("http") || url.startsWith("blob:") || url.startsWith("data:")) return url;
+  return `${API_BASE_URL}${url}`;
+};
+
+// ============================================
 // GENERIC API METHODS
 // ============================================
 
@@ -73,53 +84,60 @@ const apiService = {
   patch: (url, data, config = {}) => api.patch(url, data, config),
   delete: (url, config = {}) => api.delete(url, config),
 
+  absolutize,
+
   // ============================================
-  // IMAGE UPLOAD — Multipart/form-data
+  // IMAGE UPLOAD — multipart/form-data, field name MUST be "image"
+  // (Do NOT set Content-Type manually — axios sets the boundary)
   // ============================================
-  uploadImage: (file, sessionId = null) => {
+  uploadImage: (file) => {
     const formData = new FormData();
     formData.append("image", file);
-
-    const headers = {
-      "Content-Type": "multipart/form-data",
-    };
-    if (sessionId) {
-      headers["X-Session-Id"] = sessionId;
-    }
-
-    return api.post("/api/image-editor/upload", formData, { headers });
+    return api.post("/api/image-editor/upload", formData);
   },
 
   // ============================================
-  // IMAGE EDITING OPERATIONS
+  // IMAGE EDITING OPERATIONS — all stateless via imagePath
   // ============================================
 
-  applyFilter: (sessionId, filter) =>
-    api.post("/api/image-editor/filter", { sessionId, filter }),
+  applyFilter: (imagePath, filter) =>
+    api.post("/api/image-editor/filter", { imagePath, filter }),
 
-  applyAdjustments: (sessionId, adjustments) =>
-    api.post("/api/image-editor/adjust", { sessionId, adjustments }),
+  applyAdjustments: (imagePath, adjustments) =>
+    api.post("/api/image-editor/adjust", { imagePath, adjustments }),
 
-  enhanceImage: (sessionId) =>
-    api.post("/api/image-editor/enhance", { sessionId }),
+  enhanceImage: (imagePath) =>
+    api.post("/api/image-editor/enhance", { imagePath, scale: 1.5 }),
 
-  upscaleImage: (sessionId, factor = 2) =>
-    api.post("/api/image-editor/upscale", { sessionId, factor }),
+  upscaleImage: (imagePath, scale = 2) =>
+    api.post("/api/image-editor/upscale", { imagePath, scale }),
 
-  removeBackground: (sessionId) =>
-    api.post("/api/image-editor/remove-bg", { sessionId }),
+  resizeImage: (imagePath, width, height, fit = "cover") =>
+    api.post("/api/image-editor/resize", { imagePath, width, height, fit }),
 
-  aiEditImage: (sessionId, instruction) =>
-    api.post("/api/image-editor/ai-edit", { sessionId, instruction }),
+  cropImage: (imagePath, left, top, width, height) =>
+    api.post("/api/image-editor/crop", { imagePath, left, top, width, height }),
 
-  resetImage: (sessionId) =>
-    api.post("/api/image-editor/reset", { sessionId }),
+  rotateImage: (imagePath, degrees = 90) =>
+    api.post("/api/image-editor/rotate", { imagePath, degrees }),
 
-  getSession: (sessionId) =>
-    api.get(`/api/image-editor/session/${sessionId}`),
+  removeBackground: (imagePath) =>
+    api.post("/api/image-editor/remove-background", { imagePath }),
 
-  clearSession: (sessionId) =>
-    api.delete(`/api/image-editor/session/${sessionId}`),
+  replaceBackground: (imagePath, color = "#ffffff") =>
+    api.post("/api/image-editor/replace-background", { imagePath, color }),
+
+  aiEditImage: (imagePath, instruction) =>
+    api.post("/api/image-editor/ai-edit", { imagePath, instruction }),
+
+  compareImage: (imagePath, editType = "enhance") =>
+    api.post("/api/image-editor/compare", { imagePath, editType }),
+
+  resetImage: (imagePath) =>
+    api.post("/api/image-editor/reset", { imagePath }),
+
+  downloadUrl: (filename) =>
+    `${API_BASE_URL}/api/image-editor/download/${filename}`,
 };
 
 export default apiService;

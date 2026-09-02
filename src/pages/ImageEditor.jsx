@@ -1,7 +1,6 @@
 // ============================================================
-// AI IMAGE EDITOR — PREMIUM PRODUCTION VERSION 3.0
-// COMPLETE: Upload, preview, 14 filters, adjustments, quick actions,
-//           AI edit, reset, error handling
+// AI IMAGE EDITOR — PRODUCTION v3.0
+// Stateles flow: upload → server filename → chained edits via imagePath
 // ============================================================
 
 import React, { useState, useRef, useCallback, useEffect } from "react";
@@ -9,7 +8,7 @@ import apiService from "../services/api";
 import "./ImageEditor.css";
 
 // ============================================
-// FILTERS CONFIGURATION
+// FILTERS CONFIGURATION (ids match backend FILTER_PRESETS)
 // ============================================
 
 const FILTERS = [
@@ -40,21 +39,19 @@ const QUICK_ACTIONS = [
 ];
 
 const ALLOWED_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB client-side (server allows 20MB)
 
 // ============================================
 // IMAGE EDITOR COMPONENT
 // ============================================
 
 function ImageEditor() {
-  // ============================================
-  // STATE
-  // ============================================
-  const [sessionId, setSessionId] = useState(null);
-  const [imageState, setImageState] = useState("empty"); // empty | loaded | processing | done | error
-  const [originalUrl, setOriginalUrl] = useState(null);
-  const [resultUrl, setResultUrl] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState(null);
+  const [originalFile, setOriginalFile] = useState(null); // File object (for blob URL)
+  const [originalUrl, setOriginalUrl] = useState(null); // local blob preview
+  const [originalPath, setOriginalPath] = useState(null); // server filename of ORIGINAL
+  const [currentPath, setCurrentPath] = useState(null); // server filename being edited
+
+  const [resultUrl, setResultUrl] = useState(null); // absolute URL of edited result
   const [metadata, setMetadata] = useState(null);
   const [activeFilter, setActiveFilter] = useState(null);
   const [adjustments, setAdjustments] = useState({
@@ -63,126 +60,173 @@ function ImageEditor() {
     saturation: 1,
   });
   const [aiInstruction, setAiInstruction] = useState("");
+  const [imageState, setImageState] = useState("empty"); // empty | loaded | error
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const [processingMessage, setProcessingMessage] = useState("");
 
   const fileInputRef = useRef(null);
-  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
+  const adjustTimerRef = useRef(null);
+  const currentPathRef = useRef(null);
+  const blobUrlRef = useRef(null);
+
+  // Keep a ref of currentPath for debounced callbacks
+  useEffect(() => {
+    currentPathRef.current = currentPath;
+  }, [currentPath]);
 
   // ============================================
-  // CLEANUP ON UNMOUNT
+  // CLEANUP ON UNMOUNT — revoke blob URL only
   // ============================================
   useEffect(() => {
     return () => {
-      if (sessionId) {
-        apiService.clearSession(sessionId).catch(() => {});
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
       }
-      // Revoke object URLs
-      if (originalUrl && originalUrl.startsWith("blob:")) {
-        URL.revokeObjectURL(originalUrl);
+      if (adjustTimerRef.current) {
+        clearTimeout(adjustTimerRef.current);
       }
     };
-  }, [sessionId, originalUrl]);
+  }, []);
+
+  // ============================================
+  // COMMON: handle API responses
+  // ============================================
+  const applyResult = useCallback((data) => {
+    if (!data?.success) {
+      throw new Error(data?.message || "Operation failed.");
+    }
+    const d = data.data || {};
+    setCurrentPath(d.path || d.filename || null);
+    setResultUrl(apiService.absolutize(d.resultUrl || d.preview));
+    if (d.width && d.height) {
+      setMetadata((prev) => ({
+        ...(prev || {}),
+        width: d.width,
+        height: d.height,
+        format: d.format || (prev && prev.format) || "jpeg",
+      }));
+    }
+    setImageState("loaded");
+  }, []);
+
+  const runOperation = useCallback(
+    async (message, fn, onError) => {
+      setIsProcessing(true);
+      setErrorMessage(null);
+      setProcessingMessage(message);
+      try {
+        const response = await fn();
+        applyResult(response.data);
+      } catch (err) {
+        console.error("[ImageEditor]", err.message);
+        setErrorMessage(err.message || "Operation failed.");
+        if (onError) onError();
+      } finally {
+        setIsProcessing(false);
+        setProcessingMessage("");
+      }
+    },
+    [applyResult]
+  );
 
   // ============================================
   // FILE VALIDATION
   // ============================================
   const validateFile = useCallback((file) => {
-    if (!file) {
-      throw new Error("No file selected.");
-    }
+    if (!file) throw new Error("No file selected.");
     if (!ALLOWED_TYPES.includes(file.type)) {
       throw new Error(
-        `Invalid file type: ${file.type || "unknown"}. Allowed: JPG, PNG, WebP`
+        `Invalid file type: ${file.type || "unknown"}. Allowed: JPG, PNG, WebP.`
       );
     }
     if (file.size > MAX_FILE_SIZE) {
       const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
-      throw new Error(
-        `File too large (${sizeMB}MB). Maximum is 10MB.`
-      );
+      throw new Error(`File too large (${sizeMB}MB). Maximum is 10MB.`);
     }
     return true;
   }, []);
 
   // ============================================
-  // HANDLE FILE SELECTION
+  // HANDLE FILE SELECTION / UPLOAD
   // ============================================
   const handleFile = useCallback(
     async (file) => {
       setErrorMessage(null);
+      try {
+        validateFile(file);
+      } catch (err) {
+        setErrorMessage(err.message);
+        return;
+      }
+
+      setIsProcessing(true);
+      setProcessingMessage("Uploading image...");
       setResultUrl(null);
       setActiveFilter(null);
       setAdjustments({ brightness: 1, contrast: 1, saturation: 1 });
       setAiInstruction("");
 
+      // Local preview immediately
+      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+      const localUrl = URL.createObjectURL(file);
+      blobUrlRef.current = localUrl;
+      setOriginalFile(file);
+      setOriginalUrl(localUrl);
+
       try {
-        validateFile(file);
-
-        setImageState("processing");
-        setIsProcessing(true);
-        setProcessingMessage("Uploading image...");
-
-        // Show local preview immediately
-        const localUrl = URL.createObjectURL(file);
-        setOriginalUrl(localUrl);
-
-        // Upload to backend
         const response = await apiService.uploadImage(file);
         const data = response.data;
 
         if (!data.success) {
-          throw new Error(data.error || "Upload failed.");
+          throw new Error(data.message || "Upload failed.");
         }
 
-        setSessionId(data.sessionId);
-        setMetadata(data.metadata);
-        setPreviewUrl(data.previewUrl);
+        setOriginalPath(data.data.path);
+        setCurrentPath(data.data.path);
+        setMetadata({
+          width: data.data.width,
+          height: data.data.height,
+          format: data.data.format,
+          size: data.data.size,
+        });
         setImageState("loaded");
-        setProcessingMessage("");
       } catch (err) {
         console.error("[ImageEditor] Upload error:", err);
         setImageState("error");
         setErrorMessage(err.message || "Failed to upload image.");
-        // Revoke blob URL on error
+        setOriginalFile(null);
         setOriginalUrl(null);
+        setOriginalPath(null);
+        setCurrentPath(null);
       } finally {
         setIsProcessing(false);
+        setProcessingMessage("");
       }
     },
     [validateFile]
   );
 
   // ============================================
-  // FILE INPUT HANDLER
+  // FILE INPUT + DRAG AND DROP
   // ============================================
   const handleFileInput = useCallback(
     (e) => {
       const file = e.target.files?.[0];
-      if (file) {
-        handleFile(file);
-      }
-      // Reset input so the same file can be selected again
+      if (file) handleFile(file);
       e.target.value = "";
     },
     [handleFile]
   );
 
-  // ============================================
-  // DRAG AND DROP
-  // ============================================
   const handleDrop = useCallback(
     (e) => {
       e.preventDefault();
       e.stopPropagation();
       setDragOver(false);
-
       const file = e.dataTransfer?.files?.[0];
-      if (file) {
-        handleFile(file);
-      }
+      if (file) handleFile(file);
     },
     [handleFile]
   );
@@ -203,185 +247,97 @@ function ImageEditor() {
   // APPLY FILTER
   // ============================================
   const applyFilter = useCallback(
-    async (filterId) => {
-      if (!sessionId) return;
-
-      setIsProcessing(true);
-      setErrorMessage(null);
-      setProcessingMessage(`Applying ${filterId} filter...`);
+    (filterId) => {
+      if (!currentPathRef.current) return;
+      runOperation(
+        `Applying ${filterId} filter...`,
+        () => apiService.applyFilter(currentPathRef.current, filterId),
+        () => setActiveFilter(null)
+      );
       setActiveFilter(filterId);
-
-      try {
-        const response = await apiService.applyFilter(sessionId, filterId);
-        const data = response.data;
-
-        if (!data.success) {
-          throw new Error(data.error || "Filter failed.");
-        }
-
-        setResultUrl(data.resultUrl ? `${API_BASE}${data.resultUrl}` : null);
-        setMetadata(data.metadata);
-        setImageState("done");
-      } catch (err) {
-        console.error("[ImageEditor] Filter error:", err);
-        setErrorMessage(err.message || "Filter application failed.");
-        setActiveFilter(null);
-      } finally {
-        setIsProcessing(false);
-        setProcessingMessage("");
-      }
     },
-    [sessionId, API_BASE]
+    [runOperation]
   );
 
   // ============================================
-  // APPLY ADJUSTMENTS
+  // APPLY ADJUSTMENTS — debounced (600ms after slider stops)
   // ============================================
-  const applyAdjustments = useCallback(
-    async (adj) => {
-      if (!sessionId) return;
-
-      setIsProcessing(true);
-      setErrorMessage(null);
-      setProcessingMessage("Applying adjustments...");
-
-      try {
-        const response = await apiService.applyAdjustments(sessionId, adj);
-        const data = response.data;
-
-        if (!data.success) {
-          throw new Error(data.error || "Adjustments failed.");
-        }
-
-        setResultUrl(data.resultUrl ? `${API_BASE}${data.resultUrl}` : null);
-        setMetadata(data.metadata);
-        setImageState("done");
-      } catch (err) {
-        console.error("[ImageEditor] Adjust error:", err);
-        setErrorMessage(err.message || "Adjustments failed.");
-      } finally {
-        setIsProcessing(false);
-        setProcessingMessage("");
-      }
+  const applyAdjustmentsNow = useCallback(
+    (adj) => {
+      const path = currentPathRef.current;
+      if (!path) return;
+      runOperation("Applying adjustments...", () =>
+        apiService.applyAdjustments(path, adj)
+      );
     },
-    [sessionId, API_BASE]
+    [runOperation]
   );
 
-  // ============================================
-  // ADJUSTMENT HANDLER
-  // ============================================
   const handleAdjustmentChange = useCallback(
     (key, value) => {
-      const newAdjustments = {
-        ...adjustments,
-        [key]: parseFloat(value),
-      };
+      const newAdjustments = { ...adjustments, [key]: parseFloat(value) };
       setAdjustments(newAdjustments);
-      applyAdjustments(newAdjustments);
+
+      if (adjustTimerRef.current) clearTimeout(adjustTimerRef.current);
+      adjustTimerRef.current = setTimeout(() => {
+        applyAdjustmentsNow(newAdjustments);
+      }, 600);
     },
-    [adjustments, applyAdjustments]
+    [adjustments, applyAdjustmentsNow]
   );
 
   // ============================================
-  // QUICK ACTION HANDLER
+  // QUICK ACTIONS
   // ============================================
   const handleQuickAction = useCallback(
-    async (actionId) => {
-      if (!sessionId) return;
+    (actionId) => {
+      const path = currentPathRef.current;
+      if (!path) return;
 
-      setIsProcessing(true);
-      setErrorMessage(null);
-
-      try {
-        let response;
-        let data;
-
-        switch (actionId) {
-          case "enhance":
-            setProcessingMessage("Enhancing image...");
-            response = await apiService.enhanceImage(sessionId);
-            break;
-          case "upscale":
-            setProcessingMessage("Upscaling image 2x...");
-            response = await apiService.upscaleImage(sessionId, 2);
-            break;
-          case "removeBg":
-            setProcessingMessage("Removing background...");
-            response = await apiService.removeBackground(sessionId);
-            break;
-          case "bw_q":
-            setProcessingMessage("Converting to B&W...");
-            response = await apiService.applyFilter(sessionId, "bw");
-            setActiveFilter("bw");
-            break;
-          case "warm_q":
-            setProcessingMessage("Applying warm tone...");
-            response = await apiService.applyFilter(sessionId, "warm");
-            setActiveFilter("warm");
-            break;
-          case "vintage_q":
-            setProcessingMessage("Applying vintage...");
-            response = await apiService.applyFilter(sessionId, "vintage");
-            setActiveFilter("vintage");
-            break;
-          default:
-            throw new Error(`Unknown action: ${actionId}`);
-        }
-
-        data = response.data;
-
-        if (!data.success) {
-          throw new Error(data.error || `${actionId} failed.`);
-        }
-
-        setResultUrl(data.resultUrl ? `${API_BASE}${data.resultUrl}` : null);
-        setMetadata(data.metadata);
-        setImageState("done");
-      } catch (err) {
-        console.error(`[ImageEditor] ${actionId} error:`, err);
-        setErrorMessage(err.message || `${actionId} failed.`);
-      } finally {
-        setIsProcessing(false);
-        setProcessingMessage("");
+      switch (actionId) {
+        case "enhance":
+          runOperation("Enhancing image...", () =>
+            apiService.enhanceImage(path)
+          );
+          break;
+        case "upscale":
+          runOperation("Upscaling image 2x...", () =>
+            apiService.upscaleImage(path, 2)
+          );
+          break;
+        case "removeBg":
+          runOperation("Removing background...", () =>
+            apiService.removeBackground(path)
+          );
+          break;
+        case "bw_q":
+          applyFilter("bw");
+          break;
+        case "warm_q":
+          applyFilter("warm");
+          break;
+        case "vintage_q":
+          applyFilter("vintage");
+          break;
+        default:
+          setErrorMessage(`Unknown action: ${actionId}`);
       }
     },
-    [sessionId, API_BASE]
+    [runOperation, applyFilter]
   );
 
   // ============================================
   // AI EDIT
   // ============================================
   const handleAiEdit = useCallback(
-    async (instruction) => {
-      if (!sessionId || !instruction.trim()) return;
-
-      setIsProcessing(true);
-      setErrorMessage(null);
-      setProcessingMessage(`AI editing: "${instruction}"...`);
-
-      try {
-        const response = await apiService.aiEditImage(
-          sessionId,
-          instruction.trim()
-        );
-        const data = response.data;
-
-        if (!data.success) {
-          throw new Error(data.error || "AI edit failed.");
-        }
-
-        setResultUrl(data.resultUrl ? `${API_BASE}${data.resultUrl}` : null);
-        setMetadata(data.metadata);
-        setImageState("done");
-      } catch (err) {
-        console.error("[ImageEditor] AI Edit error:", err);
-        setErrorMessage(err.message || "AI edit failed.");
-      } finally {
-        setIsProcessing(false);
-        setProcessingMessage("");
-      }
+    (instruction) => {
+      const path = currentPathRef.current;
+      if (!path || !instruction.trim()) return;
+      runOperation(`AI editing: "${instruction}"...`, () =>
+        apiService.aiEditImage(path, instruction.trim())
+      );
     },
-    [sessionId, API_BASE]
+    [runOperation]
   );
 
   const handleAiEditSubmit = useCallback(
@@ -393,88 +349,59 @@ function ImageEditor() {
   );
 
   // ============================================
-  // RESET
+  // RESET — revert to original upload (real revert: edits chain off
+  // currentPath, so pointing currentPath back at originalPath IS the reset)
   // ============================================
-  const handleReset = useCallback(async () => {
-    if (!sessionId) {
-      // No session — just clear local state
-      setOriginalUrl(null);
-      setResultUrl(null);
-      setPreviewUrl(null);
-      setMetadata(null);
-      setImageState("empty");
-      setActiveFilter(null);
-      setAdjustments({ brightness: 1, contrast: 1, saturation: 1 });
-      setErrorMessage(null);
-      return;
-    }
-
-    setIsProcessing(true);
+  const handleReset = useCallback(() => {
+    if (!originalPath) return;
+    setCurrentPath(originalPath);
+    setResultUrl(null);
+    setActiveFilter(null);
+    setAdjustments({ brightness: 1, contrast: 1, saturation: 1 });
     setErrorMessage(null);
-    setProcessingMessage("Resetting...");
-
-    try {
-      const response = await apiService.resetImage(sessionId);
-      const data = response.data;
-
-      if (!data.success) {
-        throw new Error(data.error || "Reset failed.");
-      }
-
-      setResultUrl(null);
-      setPreviewUrl(data.previewUrl);
-      setMetadata(data.metadata);
-      setImageState("loaded");
-      setActiveFilter(null);
-      setAdjustments({ brightness: 1, contrast: 1, saturation: 1 });
-    } catch (err) {
-      console.error("[ImageEditor] Reset error:", err);
-      setErrorMessage(err.message || "Reset failed.");
-    } finally {
-      setIsProcessing(false);
-      setProcessingMessage("");
-    }
-  }, [sessionId]);
+  }, [originalPath]);
 
   // ============================================
   // NEW IMAGE
   // ============================================
   const handleNewImage = useCallback(() => {
-    // Revoke old blob URL
-    if (originalUrl && originalUrl.startsWith("blob:")) {
-      URL.revokeObjectURL(originalUrl);
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
     }
+    setOriginalFile(null);
     setOriginalUrl(null);
     setResultUrl(null);
-    setPreviewUrl(null);
     setMetadata(null);
     setImageState("empty");
-    setSessionId(null);
+    setOriginalPath(null);
+    setCurrentPath(null);
     setActiveFilter(null);
     setAdjustments({ brightness: 1, contrast: 1, saturation: 1 });
     setErrorMessage(null);
     setAiInstruction("");
-
-    // Trigger file picker
     fileInputRef.current?.click();
-  }, [originalUrl]);
+  }, []);
+
+  // ============================================
+  // DOWNLOAD — real file download from backend
+  // ============================================
+  const downloadFilename = currentPath || originalPath;
+  const downloadHref = downloadFilename
+    ? apiService.downloadUrl(downloadFilename)
+    : null;
 
   // ============================================
   // RENDER FILE SIZE
   // ============================================
   const formatFileSize = (bytes) => {
     if (!bytes) return "N/A";
-    const mb = (bytes / (1024 * 1024)).toFixed(2);
+    const mb = bytes / (1024 * 1024);
     if (mb < 1) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${mb} MB`;
+    return `${mb.toFixed(2)} MB`;
   };
 
-  // ============================================
-  // RENDER
-  // ============================================
-
-  const showUploadArea =
-    imageState === "empty" || (imageState === "error" && !originalUrl);
+  const showUploadArea = imageState === "empty" || (imageState === "error" && !originalUrl);
 
   return (
     <div className="image-editor-container">
@@ -485,25 +412,18 @@ function ImageEditor() {
         </p>
       </div>
 
-      {/* ============================================ */}
       {/* ERROR DISPLAY */}
-      {/* ============================================ */}
       {errorMessage && (
         <div className="error-banner">
           <span className="error-icon">⚠️</span>
           <span>{errorMessage}</span>
-          <button
-            className="error-dismiss"
-            onClick={() => setErrorMessage(null)}
-          >
+          <button className="error-dismiss" onClick={() => setErrorMessage(null)}>
             ✕
           </button>
         </div>
       )}
 
-      {/* ============================================ */}
       {/* PROCESSING OVERLAY */}
-      {/* ============================================ */}
       {isProcessing && (
         <div className="processing-overlay">
           <div className="processing-spinner"></div>
@@ -511,9 +431,7 @@ function ImageEditor() {
         </div>
       )}
 
-      {/* ============================================ */}
       {/* UPLOAD AREA */}
-      {/* ============================================ */}
       {showUploadArea && (
         <div
           className={`upload-area ${dragOver ? "drag-over" : ""}`}
@@ -545,38 +463,29 @@ function ImageEditor() {
           </div>
           <h3>Drop your image here</h3>
           <p>or click to browse</p>
-          <p className="upload-hint">
-            Supports JPG, PNG, WebP (up to 10MB)
-          </p>
+          <p className="upload-hint">Supports JPG, PNG, WebP (up to 10MB)</p>
         </div>
       )}
 
-      {/* ============================================ */}
-      {/* EDITOR — Visible when image is loaded */}
-      {/* ============================================ */}
+      {/* EDITOR */}
       {imageState !== "empty" && (
         <div className="editor-layout">
-          {/* ========================================== */}
-          {/* LEFT SIDEBAR — Tools */}
-          {/* ========================================== */}
+          {/* LEFT SIDEBAR */}
           <div className="editor-sidebar">
-            {/* New Image Button */}
             <button className="new-image-btn" onClick={handleNewImage}>
               📁 New Image
             </button>
 
-            {/* ============= FILTERS ============= */}
+            {/* FILTERS */}
             <div className="tool-section">
               <h3>Filters</h3>
               <div className="filter-grid">
                 {FILTERS.map((filter) => (
                   <button
                     key={filter.id}
-                    className={`filter-btn ${
-                      activeFilter === filter.id ? "active" : ""
-                    }`}
+                    className={`filter-btn ${activeFilter === filter.id ? "active" : ""}`}
                     onClick={() => applyFilter(filter.id)}
-                    disabled={isProcessing}
+                    disabled={isProcessing || !currentPath}
                     title={filter.label}
                   >
                     <span className="filter-icon">{filter.icon}</span>
@@ -586,16 +495,14 @@ function ImageEditor() {
               </div>
             </div>
 
-            {/* ============= ADJUSTMENTS ============= */}
+            {/* ADJUSTMENTS */}
             <div className="tool-section">
               <h3>Adjustments</h3>
 
               <div className="adjustment-group">
                 <label>
                   Brightness
-                  <span className="adjust-value">
-                    {adjustments.brightness.toFixed(1)}x
-                  </span>
+                  <span className="adjust-value">{adjustments.brightness.toFixed(1)}x</span>
                 </label>
                 <input
                   type="range"
@@ -603,19 +510,15 @@ function ImageEditor() {
                   max="2.0"
                   step="0.1"
                   value={adjustments.brightness}
-                  onChange={(e) =>
-                    handleAdjustmentChange("brightness", e.target.value)
-                  }
-                  disabled={isProcessing}
+                  onChange={(e) => handleAdjustmentChange("brightness", e.target.value)}
+                  disabled={isProcessing || !currentPath}
                 />
               </div>
 
               <div className="adjustment-group">
                 <label>
                   Contrast
-                  <span className="adjust-value">
-                    {adjustments.contrast.toFixed(1)}x
-                  </span>
+                  <span className="adjust-value">{adjustments.contrast.toFixed(1)}x</span>
                 </label>
                 <input
                   type="range"
@@ -623,19 +526,15 @@ function ImageEditor() {
                   max="2.5"
                   step="0.1"
                   value={adjustments.contrast}
-                  onChange={(e) =>
-                    handleAdjustmentChange("contrast", e.target.value)
-                  }
-                  disabled={isProcessing}
+                  onChange={(e) => handleAdjustmentChange("contrast", e.target.value)}
+                  disabled={isProcessing || !currentPath}
                 />
               </div>
 
               <div className="adjustment-group">
                 <label>
                   Saturation
-                  <span className="adjust-value">
-                    {adjustments.saturation.toFixed(1)}x
-                  </span>
+                  <span className="adjust-value">{adjustments.saturation.toFixed(1)}x</span>
                 </label>
                 <input
                   type="range"
@@ -643,15 +542,13 @@ function ImageEditor() {
                   max="3.0"
                   step="0.1"
                   value={adjustments.saturation}
-                  onChange={(e) =>
-                    handleAdjustmentChange("saturation", e.target.value)
-                  }
-                  disabled={isProcessing}
+                  onChange={(e) => handleAdjustmentChange("saturation", e.target.value)}
+                  disabled={isProcessing || !currentPath}
                 />
               </div>
             </div>
 
-            {/* ============= QUICK ACTIONS ============= */}
+            {/* QUICK ACTIONS */}
             <div className="tool-section">
               <h3>Quick Actions</h3>
               <div className="quick-actions-grid">
@@ -660,7 +557,7 @@ function ImageEditor() {
                     key={action.id}
                     className="quick-action-btn"
                     onClick={() => handleQuickAction(action.id)}
-                    disabled={isProcessing}
+                    disabled={isProcessing || !currentPath}
                   >
                     <span className="action-icon">{action.icon}</span>
                     <span className="action-label">{action.label}</span>
@@ -669,7 +566,7 @@ function ImageEditor() {
               </div>
             </div>
 
-            {/* ============= AI EDIT ============= */}
+            {/* AI EDIT */}
             <div className="tool-section">
               <h3>AI Edit</h3>
               <form onSubmit={handleAiEditSubmit} className="ai-edit-form">
@@ -678,53 +575,39 @@ function ImageEditor() {
                   value={aiInstruction}
                   onChange={(e) => setAiInstruction(e.target.value)}
                   placeholder='e.g., "Make brighter", "B&W"'
-                  disabled={isProcessing}
+                  disabled={isProcessing || !currentPath}
                   className="ai-input"
                 />
                 <button
                   type="submit"
                   className="ai-edit-btn"
-                  disabled={isProcessing || !aiInstruction.trim()}
+                  disabled={isProcessing || !aiInstruction.trim() || !currentPath}
                 >
                   Apply
                 </button>
               </form>
             </div>
 
-            {/* ============= RESET ============= */}
+            {/* RESET */}
             <button
               className="reset-btn"
               onClick={handleReset}
-              disabled={isProcessing}
+              disabled={isProcessing || !originalPath}
             >
               🔄 Reset to Original
             </button>
           </div>
 
-          {/* ========================================== */}
           {/* RIGHT PANEL — Preview */}
-          {/* ========================================== */}
           <div className="editor-preview">
             {/* ORIGINAL IMAGE */}
             <div className="preview-section">
               <h3>Original Image</h3>
               <div className="image-frame">
                 {originalUrl ? (
-                  <img
-                    src={
-                      originalUrl.startsWith("blob:")
-                        ? originalUrl
-                        : originalUrl.startsWith("http")
-                        ? originalUrl
-                        : `${API_BASE}${originalUrl}`
-                    }
-                    alt="Original"
-                    className="preview-image"
-                  />
+                  <img src={originalUrl} alt="Original" className="preview-image" />
                 ) : (
-                  <div className="no-image-placeholder">
-                    No image provided.
-                  </div>
+                  <div className="no-image-placeholder">No image uploaded.</div>
                 )}
               </div>
               {metadata && (
@@ -732,11 +615,9 @@ function ImageEditor() {
                   <span className="info-badge">
                     {metadata.width} × {metadata.height}
                   </span>
-                  <span className="info-badge">{metadata.format}</span>
+                  <span className="info-badge">{metadata.format || "jpeg"}</span>
                   {metadata.size && (
-                    <span className="info-badge">
-                      {formatFileSize(metadata.size)}
-                    </span>
+                    <span className="info-badge">{formatFileSize(metadata.size)}</span>
                   )}
                 </div>
               )}
@@ -746,12 +627,8 @@ function ImageEditor() {
             <div className="preview-section">
               <h3>
                 {resultUrl ? "Edited Result" : "Preview"}
-                {resultUrl && (
-                  <a
-                    href={resultUrl}
-                    download="edited-image.jpg"
-                    className="download-link"
-                  >
+                {downloadHref && (
+                  <a href={downloadHref} download className="download-link">
                     ⬇ Download
                   </a>
                 )}
@@ -764,32 +641,27 @@ function ImageEditor() {
                     className="preview-image"
                     onError={(e) => {
                       e.target.style.display = "none";
-                      e.target.nextSibling.style.display = "flex";
+                      if (e.target.nextSibling) e.target.nextSibling.style.display = "flex";
+                    }}
+                    onLoad={(e) => {
+                      e.target.style.display = "block";
+                      if (e.target.nextSibling) e.target.nextSibling.style.display = "none";
                     }}
                   />
-                ) : (
-                  <div className="no-image-placeholder">
-                    {imageState === "loaded"
-                      ? "Apply a filter or adjustment to see the result"
-                      : imageState === "processing"
-                      ? "Processing..."
-                      : "No result yet"}
-                  </div>
-                )}
+                ) : null}
                 <div
                   className="no-image-placeholder"
-                  style={{ display: "none" }}
+                  style={{ display: resultUrl ? "none" : "flex" }}
                 >
-                  Failed to load result image
+                  {resultUrl
+                    ? "Failed to load result image"
+                    : "Apply a filter or adjustment to see the result"}
                 </div>
               </div>
               {resultUrl && metadata && (
                 <div className="image-info">
                   <span className="info-badge">
                     {metadata.width} × {metadata.height}
-                  </span>
-                  <span className="info-badge">
-                    {metadata.format || "jpeg"}
                   </span>
                 </div>
               )}
