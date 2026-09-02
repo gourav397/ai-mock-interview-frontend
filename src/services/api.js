@@ -63,10 +63,72 @@ api.interceptors.response.use(
 );
 
 // ============================================
-// IMAGE EDITOR — URL helpers
-// ============================================
+// IMAGE EDITOR — URL / FILENAME NORMALIZATION
+// Single source of truth for extracting a safe filename from ANY
+// backend response format:
+//   - { path: "adjusted_uuid.jpg" }                          (new backend)
+//   - { path: "/app/temp/processed/adjusted_uuid.jpg" }      (old backend, full fs path)
+//   - { path: "C:\\app\\temp\\adjusted_uuid.jpg" }           (old backend, Windows)
+//   - { preview: "/api/image-editor/preview/adjusted_x.jpg" }
+//   - { resultUrl: ".../preview/adjusted_x.jpg" }
+//   - { filename: "adjusted_x.jpg" }
+// ============================================================
 
-// Server returns relative URLs like /api/image-editor/preview/<file>
+/**
+ * Extract a safe basename from any value (URL, path, or plain filename).
+ * Returns null if nothing safe can be extracted.
+ */
+const extractBasename = (value) => {
+  if (!value || typeof value !== "string") return null;
+  // Never treat data:/blob: URLs as filenames
+  if (value.startsWith("data:") || value.startsWith("blob:")) return null;
+  // Strip query/hash, then take everything after the last / or \
+  const clean = value.split("?")[0].split("#")[0];
+  const name = clean.split("/").pop().split("\\").pop();
+  if (!name) return null;
+  // Must be a safe filename with an extension (blocks traversal payloads)
+  if (!/^[a-zA-Z0-9._-]+$/.test(name)) return null;
+  if (!name.includes(".")) return null;
+  return name;
+};
+
+/**
+ * Resolve the result filename from a backend response data object.
+ * Checks preview URL → resultUrl → path → filename, in that order.
+ */
+const resolveImageFilename = (d = {}) => {
+  return (
+    extractBasename(d.preview) ||
+    extractBasename(d.resultUrl) ||
+    extractBasename(d.path) ||
+    extractBasename(d.filename) ||
+    null
+  );
+};
+
+/**
+ * Build the canonical preview URL for a filename.
+ * Cache-busting param included so repeated edits always refresh.
+ */
+const buildPreviewUrl = (filename) => {
+  const name = extractBasename(filename);
+  if (!name) return null;
+  return `${API_BASE_URL}/api/image-editor/preview/${encodeURIComponent(
+    name
+  )}?v=${Date.now()}`;
+};
+
+/**
+ * Build the canonical download URL for a filename.
+ * Points at the SAME generated file as the preview.
+ */
+const buildDownloadUrl = (filename) => {
+  const name = extractBasename(filename);
+  if (!name) return null;
+  return `${API_BASE_URL}/api/image-editor/download/${encodeURIComponent(name)}`;
+};
+
+// Legacy helper kept for compatibility
 const absolutize = (url) => {
   if (!url) return null;
   if (url.startsWith("http") || url.startsWith("blob:") || url.startsWith("data:")) return url;
@@ -85,12 +147,16 @@ const apiService = {
   delete: (url, config = {}) => api.delete(url, config),
 
   absolutize,
+  extractBasename,
+  resolveImageFilename,
+  buildPreviewUrl,
+  buildDownloadUrl,
 
   // ============================================
   // IMAGE UPLOAD — multipart/form-data, field name MUST be "image"
   // (Do NOT set Content-Type manually — axios sets the boundary)
   // ============================================
-  uploadImage: (file) => {
+ uploadImage: (file) => {
   const formData = new FormData();
 
   formData.append("image", file, file.name);
@@ -101,8 +167,10 @@ const apiService = {
     },
   });
 },
+
   // ============================================
   // IMAGE EDITING OPERATIONS — all stateless via imagePath
+  // imagePath is always a SAFE basename returned by a previous call
   // ============================================
 
   applyFilter: (imagePath, filter) =>
@@ -141,8 +209,7 @@ const apiService = {
   resetImage: (imagePath) =>
     api.post("/api/image-editor/reset", { imagePath }),
 
-  downloadUrl: (filename) =>
-    `${API_BASE_URL}/api/image-editor/download/${filename}`,
+  downloadUrl: buildDownloadUrl,
 };
 
 export default apiService;

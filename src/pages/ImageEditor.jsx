@@ -1,11 +1,19 @@
 // ============================================================
-// AI IMAGE EDITOR — PRODUCTION v3.0
-// Stateles flow: upload → server filename → chained edits via imagePath
+// AI IMAGE EDITOR — PRODUCTION v4.1
+// Result preview uses ONE canonical URL builder (apiService.buildPreviewUrl)
+// built from a safely extracted basename — never raw `path`, never blob,
+// never double-prepended base URL.
+// AI Edit supports Hindi/Hinglish/English + multi-step commands.
 // ============================================================
 
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import apiService from "../services/api";
 import "./ImageEditor.css";
+
+// ============================================
+// DEBUG — set to false after confirming the fix in production
+// ============================================
+const DEBUG_IMAGE_EDIT = true;
 
 // ============================================
 // FILTERS CONFIGURATION (ids match backend FILTER_PRESETS)
@@ -38,6 +46,15 @@ const QUICK_ACTIONS = [
   { id: "vintage_q", label: "Vintage", icon: "📷" },
 ];
 
+const AI_SUGGESTIONS = [
+  "background hata do",
+  "HD kar do",
+  "brightness badha do",
+  "background white kar do",
+  "vintage look do",
+  "cinematic bana do",
+];
+
 const ALLOWED_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB client-side (server allows 20MB)
 
@@ -46,12 +63,12 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB client-side (server allows 20MB)
 // ============================================
 
 function ImageEditor() {
-  const [originalFile, setOriginalFile] = useState(null); // File object (for blob URL)
-  const [originalUrl, setOriginalUrl] = useState(null); // local blob preview
+  const [originalUrl, setOriginalUrl] = useState(null); // local blob preview (original ONLY)
   const [originalPath, setOriginalPath] = useState(null); // server filename of ORIGINAL
-  const [currentPath, setCurrentPath] = useState(null); // server filename being edited
+  const [currentPath, setCurrentPath] = useState(null); // server filename of latest edit
 
-  const [resultUrl, setResultUrl] = useState(null); // absolute URL of edited result
+  const [resultUrl, setResultUrl] = useState(null); // canonical backend preview URL
+  const [resultLoadError, setResultLoadError] = useState(false); // React-state based, no DOM hacks
   const [metadata, setMetadata] = useState(null);
   const [activeFilter, setActiveFilter] = useState(null);
   const [adjustments, setAdjustments] = useState({
@@ -63,6 +80,7 @@ function ImageEditor() {
   const [imageState, setImageState] = useState("empty"); // empty | loaded | error
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const [processingMessage, setProcessingMessage] = useState("");
 
@@ -70,14 +88,18 @@ function ImageEditor() {
   const adjustTimerRef = useRef(null);
   const currentPathRef = useRef(null);
   const blobUrlRef = useRef(null);
+  const isProcessingRef = useRef(false);
 
-  // Keep a ref of currentPath for debounced callbacks
   useEffect(() => {
     currentPathRef.current = currentPath;
   }, [currentPath]);
 
+  useEffect(() => {
+    isProcessingRef.current = isProcessing;
+  }, [isProcessing]);
+
   // ============================================
-  // CLEANUP ON UNMOUNT — revoke blob URL only
+  // CLEANUP ON UNMOUNT
   // ============================================
   useEffect(() => {
     return () => {
@@ -92,14 +114,45 @@ function ImageEditor() {
 
   // ============================================
   // COMMON: handle API responses
+  // Establishes the single consistent contract:
+  //   response.data.data → { preview | resultUrl | path | filename }
+  //   → safely resolved basename → canonical preview URL
   // ============================================
-  const applyResult = useCallback((data) => {
-    if (!data?.success) {
-      throw new Error(data?.message || "Operation failed.");
+  const applyResult = useCallback((responseData, context = "operation") => {
+    if (!responseData?.success) {
+      throw new Error(responseData?.message || "Operation failed.");
     }
-    const d = data.data || {};
-    setCurrentPath(d.path || d.filename || null);
-    setResultUrl(apiService.absolutize(d.resultUrl || d.preview));
+
+    const d = responseData.data || {};
+
+    // Resolve filename from ANY response format (see api.js)
+    const filename = apiService.resolveImageFilename(d);
+
+    if (DEBUG_IMAGE_EDIT) {
+      console.log(`[IMAGE EDIT RESULT] (${context})`, {
+        responseData: responseData,
+        filename: filename,
+        preview: d.preview,
+        resultUrl: d.resultUrl,
+        path: d.path,
+        finalPreviewUrl: filename ? apiService.buildPreviewUrl(filename) : null,
+      });
+    }
+
+    if (!filename) {
+      throw new Error(
+        "Backend ne valid image filename return nahi kiya. Deploy latest backend and retry."
+      );
+    }
+
+    // currentPath always points to the LATEST successful result
+    setCurrentPath(filename);
+
+    // Edited Result uses ONLY the canonical backend preview URL
+    // (never blob, never original URL, never constructed from raw path)
+    setResultUrl(apiService.buildPreviewUrl(filename));
+    setResultLoadError(false);
+
     if (d.width && d.height) {
       setMetadata((prev) => ({
         ...(prev || {}),
@@ -108,19 +161,26 @@ function ImageEditor() {
         format: d.format || (prev && prev.format) || "jpeg",
       }));
     }
+
+    setSuccessMessage(responseData.message || null);
     setImageState("loaded");
   }, []);
 
   const runOperation = useCallback(
-    async (message, fn, onError) => {
+    async (message, fn, context, onError) => {
+      // Prevent duplicate/parallel requests
+      if (isProcessingRef.current) return;
+
       setIsProcessing(true);
       setErrorMessage(null);
+      setSuccessMessage(null);
       setProcessingMessage(message);
       try {
         const response = await fn();
-        applyResult(response.data);
+        applyResult(response.data, context);
       } catch (err) {
-        console.error("[ImageEditor]", err.message);
+        console.error(`[ImageEditor] ${context} error:`, err.message);
+        // On failure: current image + previous result are PRESERVED
         setErrorMessage(err.message || "Operation failed.");
         if (onError) onError();
       } finally {
@@ -153,6 +213,7 @@ function ImageEditor() {
   // ============================================
   const handleFile = useCallback(
     async (file) => {
+      if (isProcessingRef.current) return;
       setErrorMessage(null);
       try {
         validateFile(file);
@@ -164,39 +225,58 @@ function ImageEditor() {
       setIsProcessing(true);
       setProcessingMessage("Uploading image...");
       setResultUrl(null);
+      setResultLoadError(false);
+      setSuccessMessage(null);
       setActiveFilter(null);
       setAdjustments({ brightness: 1, contrast: 1, saturation: 1 });
       setAiInstruction("");
 
-      // Local preview immediately
+      // Local blob preview for the ORIGINAL image only
       if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
       const localUrl = URL.createObjectURL(file);
       blobUrlRef.current = localUrl;
-      setOriginalFile(file);
       setOriginalUrl(localUrl);
 
       try {
         const response = await apiService.uploadImage(file);
-        const data = response.data;
+        const responseData = response.data;
 
-        if (!data.success) {
-          throw new Error(data.message || "Upload failed.");
+        if (!responseData.success) {
+          throw new Error(responseData.message || "Upload failed.");
         }
 
-        setOriginalPath(data.data.path);
-        setCurrentPath(data.data.path);
+        const d = responseData.data || {};
+        // Use the same safe resolution (old backends may return a full path)
+        const filename =
+          apiService.resolveImageFilename(d) ||
+          apiService.extractBasename(d.path);
+
+        if (DEBUG_IMAGE_EDIT) {
+          console.log("[IMAGE EDIT RESULT] (upload)", {
+            responseData,
+            filename,
+            finalPreviewUrl: filename ? apiService.buildPreviewUrl(filename) : null,
+          });
+        }
+
+        if (!filename) {
+          throw new Error("Upload succeeded but server returned no valid filename.");
+        }
+
+        setOriginalPath(filename);
+        setCurrentPath(filename);
         setMetadata({
-          width: data.data.width,
-          height: data.data.height,
-          format: data.data.format,
-          size: data.data.size,
+          width: d.width,
+          height: d.height,
+          format: d.format,
+          size: d.size,
         });
         setImageState("loaded");
+        setSuccessMessage("Image uploaded. Start editing!");
       } catch (err) {
         console.error("[ImageEditor] Upload error:", err);
         setImageState("error");
         setErrorMessage(err.message || "Failed to upload image.");
-        setOriginalFile(null);
         setOriginalUrl(null);
         setOriginalPath(null);
         setCurrentPath(null);
@@ -252,6 +332,7 @@ function ImageEditor() {
       runOperation(
         `Applying ${filterId} filter...`,
         () => apiService.applyFilter(currentPathRef.current, filterId),
+        `filter:${filterId}`,
         () => setActiveFilter(null)
       );
       setActiveFilter(filterId);
@@ -266,8 +347,10 @@ function ImageEditor() {
     (adj) => {
       const path = currentPathRef.current;
       if (!path) return;
-      runOperation("Applying adjustments...", () =>
-        apiService.applyAdjustments(path, adj)
+      runOperation(
+        "Applying adjustments...",
+        () => apiService.applyAdjustments(path, adj),
+        "adjust"
       );
     },
     [runOperation]
@@ -296,19 +379,13 @@ function ImageEditor() {
 
       switch (actionId) {
         case "enhance":
-          runOperation("Enhancing image...", () =>
-            apiService.enhanceImage(path)
-          );
+          runOperation("Enhancing image...", () => apiService.enhanceImage(path), "enhance");
           break;
         case "upscale":
-          runOperation("Upscaling image 2x...", () =>
-            apiService.upscaleImage(path, 2)
-          );
+          runOperation("Upscaling image 2x...", () => apiService.upscaleImage(path, 2), "upscale");
           break;
         case "removeBg":
-          runOperation("Removing background...", () =>
-            apiService.removeBackground(path)
-          );
+          runOperation("Removing background...", () => apiService.removeBackground(path), "removeBg");
           break;
         case "bw_q":
           applyFilter("bw");
@@ -327,14 +404,16 @@ function ImageEditor() {
   );
 
   // ============================================
-  // AI EDIT
+  // AI EDIT — natural language (Hindi/Hinglish/English), multi-step
   // ============================================
   const handleAiEdit = useCallback(
     (instruction) => {
       const path = currentPathRef.current;
       if (!path || !instruction.trim()) return;
-      runOperation(`AI editing: "${instruction}"...`, () =>
-        apiService.aiEditImage(path, instruction.trim())
+      runOperation(
+        `AI editing: "${instruction.trim()}"...`,
+        () => apiService.aiEditImage(path, instruction.trim()),
+        "ai-edit"
       );
     },
     [runOperation]
@@ -349,16 +428,17 @@ function ImageEditor() {
   );
 
   // ============================================
-  // RESET — revert to original upload (real revert: edits chain off
-  // currentPath, so pointing currentPath back at originalPath IS the reset)
+  // RESET — revert to original upload (original is never overwritten)
   // ============================================
   const handleReset = useCallback(() => {
     if (!originalPath) return;
     setCurrentPath(originalPath);
     setResultUrl(null);
+    setResultLoadError(false);
     setActiveFilter(null);
     setAdjustments({ brightness: 1, contrast: 1, saturation: 1 });
     setErrorMessage(null);
+    setSuccessMessage("Reset to original image.");
   }, [originalPath]);
 
   // ============================================
@@ -369,9 +449,9 @@ function ImageEditor() {
       URL.revokeObjectURL(blobUrlRef.current);
       blobUrlRef.current = null;
     }
-    setOriginalFile(null);
     setOriginalUrl(null);
     setResultUrl(null);
+    setResultLoadError(false);
     setMetadata(null);
     setImageState("empty");
     setOriginalPath(null);
@@ -379,12 +459,13 @@ function ImageEditor() {
     setActiveFilter(null);
     setAdjustments({ brightness: 1, contrast: 1, saturation: 1 });
     setErrorMessage(null);
+    setSuccessMessage(null);
     setAiInstruction("");
     fileInputRef.current?.click();
   }, []);
 
   // ============================================
-  // DOWNLOAD — real file download from backend
+  // DOWNLOAD — same filename as the displayed edited result
   // ============================================
   const downloadFilename = currentPath || originalPath;
   const downloadHref = downloadFilename
@@ -408,7 +489,8 @@ function ImageEditor() {
       <div className="image-editor-header">
         <h1>AI Image Editor</h1>
         <p className="subtitle">
-          Upload, edit, and enhance your images with AI-powered tools
+          Upload, edit, and enhance your images with AI-powered tools — Hindi,
+          Hinglish & English instructions supported
         </p>
       </div>
 
@@ -418,6 +500,35 @@ function ImageEditor() {
           <span className="error-icon">⚠️</span>
           <span>{errorMessage}</span>
           <button className="error-dismiss" onClick={() => setErrorMessage(null)}>
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* SUCCESS DISPLAY */}
+      {successMessage && !errorMessage && (
+        <div
+          className="success-banner"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            background: "#f0fff4",
+            border: "1px solid #9ae6b4",
+            borderRadius: "8px",
+            padding: "12px 16px",
+            marginBottom: "20px",
+            color: "#276749",
+            fontSize: "0.9rem",
+          }}
+        >
+          <span>✓</span>
+          <span>{successMessage}</span>
+          <button
+            className="error-dismiss"
+            style={{ color: "#276749" }}
+            onClick={() => setSuccessMessage(null)}
+          >
             ✕
           </button>
         </div>
@@ -568,13 +679,13 @@ function ImageEditor() {
 
             {/* AI EDIT */}
             <div className="tool-section">
-              <h3>AI Edit</h3>
+              <h3>AI Edit (Hindi / English)</h3>
               <form onSubmit={handleAiEditSubmit} className="ai-edit-form">
                 <input
                   type="text"
                   value={aiInstruction}
                   onChange={(e) => setAiInstruction(e.target.value)}
-                  placeholder='e.g., "Make brighter", "B&W"'
+                  placeholder='e.g., "background hata do aur HD kar do"'
                   disabled={isProcessing || !currentPath}
                   className="ai-input"
                 />
@@ -586,6 +697,34 @@ function ImageEditor() {
                   Apply
                 </button>
               </form>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "6px",
+                  marginTop: "10px",
+                }}
+              >
+                {AI_SUGGESTIONS.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setAiInstruction(s)}
+                    disabled={isProcessing || !currentPath}
+                    style={{
+                      fontSize: "0.7rem",
+                      padding: "4px 8px",
+                      borderRadius: "12px",
+                      border: "1px solid #d0ccff",
+                      background: "#f5f3ff",
+                      color: "#5a52d5",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* RESET */}
@@ -600,7 +739,7 @@ function ImageEditor() {
 
           {/* RIGHT PANEL — Preview */}
           <div className="editor-preview">
-            {/* ORIGINAL IMAGE */}
+            {/* ORIGINAL IMAGE — always visible, never modified */}
             <div className="preview-section">
               <h3>Original Image</h3>
               <div className="image-frame">
@@ -623,7 +762,7 @@ function ImageEditor() {
               )}
             </div>
 
-            {/* RESULT IMAGE */}
+            {/* EDITED RESULT — canonical backend preview URL */}
             <div className="preview-section">
               <h3>
                 {resultUrl ? "Edited Result" : "Preview"}
@@ -634,31 +773,28 @@ function ImageEditor() {
                 )}
               </h3>
               <div className="image-frame">
-                {resultUrl ? (
+                {resultUrl && (
                   <img
                     src={resultUrl}
                     alt="Edited"
                     className="preview-image"
-                    onError={(e) => {
-                      e.target.style.display = "none";
-                      if (e.target.nextSibling) e.target.nextSibling.style.display = "flex";
-                    }}
-                    onLoad={(e) => {
-                      e.target.style.display = "block";
-                      if (e.target.nextSibling) e.target.nextSibling.style.display = "none";
-                    }}
+                    onError={() => setResultLoadError(true)}
+                    onLoad={() => setResultLoadError(false)}
+                    style={{ display: resultLoadError ? "none" : "block" }}
                   />
-                ) : null}
+                )}
                 <div
                   className="no-image-placeholder"
-                  style={{ display: resultUrl ? "none" : "flex" }}
+                  style={{ display: resultUrl && !resultLoadError ? "none" : "flex" }}
                 >
                   {resultUrl
-                    ? "Failed to load result image"
+                    ? resultLoadError
+                      ? "Result image load nahi hui. Retry ya naya edit try karo."
+                      : "Loading result..."
                     : "Apply a filter or adjustment to see the result"}
                 </div>
               </div>
-              {resultUrl && metadata && (
+              {resultUrl && !resultLoadError && metadata && (
                 <div className="image-info">
                   <span className="info-badge">
                     {metadata.width} × {metadata.height}
