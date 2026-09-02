@@ -1,6 +1,5 @@
 // ============================================================
 // API SERVICE — Centralized API client
-// PREMIUM: Handles auth, errors, multipart, image uploads
 // Image Editor endpoints are STATELESS: upload returns a server
 // filename, and every edit operation sends it back as `imagePath`.
 // ============================================================
@@ -54,6 +53,7 @@ api.interceptors.response.use(
       const message =
         data?.message || data?.error || `Request failed (${status})`;
       error.message = message;
+      error.responseData = data;
     } else if (error.request) {
       error.message = "No response from server. Check your connection.";
     }
@@ -91,15 +91,11 @@ const apiService = {
   // (Do NOT set Content-Type manually — axios sets the boundary)
   // ============================================
   uploadImage: (file) => {
-  const formData = new FormData();
-  formData.append("image", file, file.name);
+    const formData = new FormData();
+    formData.append("image", file);
+    return api.post("/api/image-editor/upload", formData);
+  },
 
-  return api.post("/api/image-editor/upload", formData, {
-    headers: {
-      "Content-Type": undefined,
-    },
-  });
-},
   // ============================================
   // IMAGE EDITING OPERATIONS — all stateless via imagePath
   // ============================================
