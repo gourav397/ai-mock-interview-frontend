@@ -26,7 +26,7 @@ function Login() {
     try {
       setLoading(true);
 
-      const res = await API.post("/auth/login", formData);
+      const res = await API.post("/api/auth/login", formData);
 
       // ─── FIX: Store token BOTH separately AND inside user object ───
       localStorage.setItem("token", res.data.token);
