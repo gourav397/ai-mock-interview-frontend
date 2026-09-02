@@ -91,11 +91,16 @@ const apiService = {
   // (Do NOT set Content-Type manually — axios sets the boundary)
   // ============================================
   uploadImage: (file) => {
-    const formData = new FormData();
-    formData.append("image", file);
-    return api.post("/api/image-editor/upload", formData);
-  },
+  const formData = new FormData();
 
+  formData.append("image", file, file.name);
+
+  return api.post("/api/image-editor/upload", formData, {
+    headers: {
+      "Content-Type": undefined,
+    },
+  });
+},
   // ============================================
   // IMAGE EDITING OPERATIONS — all stateless via imagePath
   // ============================================
