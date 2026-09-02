@@ -113,9 +113,8 @@ const resolveImageFilename = (d = {}) => {
 const buildPreviewUrl = (filename) => {
   const name = extractBasename(filename);
   if (!name) return null;
-  return `${API_BASE_URL}/api/image-editor/preview/${encodeURIComponent(
-    name
-  )}?v=${Date.now()}`;
+
+  return `${API_BASE_URL}/api/image-editor/preview/${encodeURIComponent(name)}`;
 };
 
 /**
