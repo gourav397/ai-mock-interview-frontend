@@ -67,7 +67,7 @@ function ClassExam() {
     }
     setLoading(true);
     try {
-      const res = await API.get("/ai-interview/generate", {
+      const res = await API.get("/api/ai-interview/generate", {
         params: { category, difficulty, count: 50 },
       });
       const qs = res.data.questions || [];

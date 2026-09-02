@@ -105,7 +105,7 @@ function Interview() {
 
     try {
       const count = QUESTION_COUNTS[difficulty] || 30;
-      const res = await API.get("/ai-interview/generate", {
+      const res = await API.get("/api/ai-interview/generate", {
         params: {
           category: jobRole,
           difficulty,
