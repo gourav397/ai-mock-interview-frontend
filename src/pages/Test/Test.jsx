@@ -58,8 +58,8 @@ function Test() {
 
   const startTest = async () => {
     setLoading(true);
-    try {API.get("/api/ai-interview/generate", {
-      const res = await 
+    try {
+      const res = await API.get("/api/ai-interview/generate", {
         params: { category, difficulty, count: 50 },
       });
       const qs = res.data.questions || [];
