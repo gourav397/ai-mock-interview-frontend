@@ -123,7 +123,7 @@ function ImageEditor() {
       throw new Error(responseData?.message || "Operation failed.");
     }
 
-    const d = responseData.data || {};
+    const d = responseData.data || responseData;
 
     // Resolve filename from ANY response format (see api.js)
     const filename = apiService.resolveImageFilename(d);
@@ -245,7 +245,7 @@ function ImageEditor() {
           throw new Error(responseData.message || "Upload failed.");
         }
 
-        const d = responseData.data || {};
+        const d = responseData.data || responseData;
         // Use the same safe resolution (old backends may return a full path)
         const filename =
           apiService.resolveImageFilename(d) ||
@@ -265,6 +265,8 @@ function ImageEditor() {
 
         setOriginalPath(filename);
         setCurrentPath(filename);
+        setResultUrl(apiService.buildPreviewUrl(filename));
+        setResultLoadError(false);
         setMetadata({
           width: d.width,
           height: d.height,
