@@ -1,26 +1,34 @@
 // ============================================================
-// AI IMAGE EDITOR — PRODUCTION v4.2
+// IMAGE EDITOR — FREE / LOCAL VERSION
+// ============================================================
+// ✅ No OpenAI API for normal editing
+// ✅ No Gemini API for filters
+// ✅ Canvas-based local processing
+// ✅ Filters
+// ✅ Brightness / Contrast / Saturation
+// ✅ Background blur approximation
+// ✅ 8 free hairstyle effects
+// ✅ Local text overlay / replacement workflow
+// ✅ Download edited image locally
+//
+// IMPORTANT:
+// Real AI hairstyle generation / perfect background removal /
+// automatic text reconstruction require an AI model.
+// This version intentionally does NOT fake those features.
 // ============================================================
 
 import React, {
-  useState,
-  useRef,
   useCallback,
   useEffect,
+  useRef,
+  useState,
 } from "react";
 
-import apiService from "../services/api";
 import "./ImageEditor.css";
 
-// ============================================
-// DEBUG
-// ============================================
-
-const DEBUG_IMAGE_EDIT = true;
-
-// ============================================
+// ============================================================
 // FILTERS
-// ============================================
+// ============================================================
 
 const FILTERS = [
   { id: "natural", label: "Natural", icon: "🌿" },
@@ -42,35 +50,21 @@ const FILTERS = [
   { id: "portrait-enhance", label: "Portrait Enhance", icon: "💎" },
 ];
 
-// ============================================
+// ============================================================
 // QUICK ACTIONS
-// ============================================
+// ============================================================
 
 const QUICK_ACTIONS = [
   { id: "enhance", label: "Enhance", icon: "✨" },
   { id: "upscale", label: "2x Upscale", icon: "🔍" },
-  { id: "removeBg", label: "Remove BG", icon: "✂️" },
-  { id: "bw_q", label: "B&W", icon: "⚫" },
-  { id: "warm_q", label: "Warm", icon: "🔥" },
-  { id: "vintage_q", label: "Vintage", icon: "📷" },
+  { id: "bw", label: "B&W", icon: "⚫" },
+  { id: "warm", label: "Warm", icon: "🔥" },
+  { id: "vintage", label: "Vintage", icon: "📷" },
 ];
 
-// ============================================
-// AI SUGGESTIONS
-// ============================================
-
-const AI_SUGGESTIONS = [
-  "background hata do",
-  "HD kar do",
-  "brightness badha do",
-  "background white kar do",
-  "vintage look do",
-  "cinematic bana do",
-];
-
-// ============================================
-// HAIRSTYLES
-// ============================================
+// ============================================================
+// FREE HAIRSTYLES
+// ============================================================
 
 const HAIRSTYLES = [
   { id: "original", label: "Original", icon: "🧑" },
@@ -81,24 +75,21 @@ const HAIRSTYLES = [
   { id: "textured", label: "Textured", icon: "🌾" },
   { id: "wavy", label: "Wavy", icon: "🌊" },
   { id: "curly", label: "Curly", icon: "🌀" },
-  { id: "slick-back", label: "Slick Back", icon: "💼" },
-  { id: "undercut", label: "Undercut", icon: "🪒" },
-  { id: "fade", label: "Fade", icon: "🕶️" },
-  { id: "fringe", label: "Fringe", icon: "💇" },
-  { id: "buzz-cut", label: "Buzz Cut", icon: "🦲" },
-  { id: "long-hair", label: "Long Hair", icon: "💁" },
-  { id: "messy", label: "Messy Style", icon: "🌪️" },
 ];
 
-// ============================================
-// BACKGROUND BLUR
-// ============================================
+// ============================================================
+// BLUR
+// ============================================================
 
-const BG_BLUR_LEVELS = ["low", "medium", "high"];
+const BG_BLUR_LEVELS = [
+  { id: "low", label: "Low" },
+  { id: "medium", label: "Medium" },
+  { id: "high", label: "High" },
+];
 
-// ============================================
-// FILE SETTINGS
-// ============================================
+// ============================================================
+// FILE
+// ============================================================
 
 const ALLOWED_TYPES = [
   "image/jpeg",
@@ -109,455 +100,1191 @@ const ALLOWED_TYPES = [
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
-// ============================================
-// COMPONENT
-// ============================================
+// ============================================================
+// HELPERS
+// ============================================================
 
-function ImageEditor() {
-  // ==========================================
-  // IMAGE STATE
-  // ==========================================
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
 
-  const [originalUrl, setOriginalUrl] = useState(null);
-  const [originalPath, setOriginalPath] = useState(null);
-  const [currentPath, setCurrentPath] = useState(null);
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
 
-  const [resultUrl, setResultUrl] = useState(null);
-  const [resultLoadError, setResultLoadError] = useState(false);
+    img.onload = () => resolve(img);
+    img.onerror = () =>
+      reject(new Error("Image load failed."));
 
-  const [metadata, setMetadata] = useState(null);
-
-  // ==========================================
-  // EDIT STATE
-  // ==========================================
-
-  const [activeFilter, setActiveFilter] = useState(null);
-
-  const [adjustments, setAdjustments] = useState({
-    brightness: 1,
-    contrast: 1,
-    saturation: 1,
+    img.src = src;
   });
+}
 
-  const [blurIntensity, setBlurIntensity] = useState("medium");
+function createCanvas(width, height) {
+  const canvas = document.createElement("canvas");
 
-  const [aiInstruction, setAiInstruction] = useState("");
+  canvas.width = Math.max(1, Math.round(width));
+  canvas.height = Math.max(1, Math.round(height));
 
-  // ==========================================
-  // UI STATE
-  // ==========================================
+  return canvas;
+}
 
-  const [imageState, setImageState] = useState("empty");
+function canvasToUrl(canvas, type = "image/png", quality = 0.95) {
+  return canvas.toDataURL(type, quality);
+}
 
-  const [isProcessing, setIsProcessing] = useState(false);
+// ============================================================
+// FILTER DEFINITIONS
+// ============================================================
 
-  const [errorMessage, setErrorMessage] = useState(null);
+function getFilterSettings(filterId) {
+  switch (filterId) {
+    case "brighten":
+      return {
+        brightness: 1.25,
+        contrast: 1,
+        saturation: 1,
+      };
 
-  const [successMessage, setSuccessMessage] = useState(null);
+    case "darken":
+      return {
+        brightness: 0.78,
+        contrast: 1,
+        saturation: 1,
+      };
 
-  const [dragOver, setDragOver] = useState(false);
+    case "contrast":
+      return {
+        brightness: 1,
+        contrast: 1.35,
+        saturation: 1,
+      };
 
-  const [processingMessage, setProcessingMessage] = useState("");
+    case "saturate":
+      return {
+        brightness: 1,
+        contrast: 1,
+        saturation: 1.5,
+      };
 
-  // ==========================================
-  // REFS
-  // ==========================================
+    case "desaturate":
+      return {
+        brightness: 1,
+        contrast: 1,
+        saturation: 0.35,
+      };
 
-  const fileInputRef = useRef(null);
+    case "warm":
+      return {
+        brightness: 1.05,
+        contrast: 1.05,
+        saturation: 1.12,
+        temperature: 18,
+      };
 
-  const adjustTimerRef = useRef(null);
+    case "cool":
+      return {
+        brightness: 1,
+        contrast: 1.05,
+        saturation: 1.05,
+        temperature: -18,
+      };
 
-  const currentPathRef = useRef(null);
+    case "vintage":
+      return {
+        brightness: 1.05,
+        contrast: 0.9,
+        saturation: 0.72,
+        sepia: 0.28,
+      };
 
-  const blobUrlRef = useRef(null);
+    case "bw":
+      return {
+        brightness: 1.03,
+        contrast: 1.12,
+        saturation: 0,
+      };
 
-  const isProcessingRef = useRef(false);
+    case "cinematic":
+      return {
+        brightness: 0.98,
+        contrast: 1.28,
+        saturation: 0.88,
+        temperature: -3,
+      };
 
-  // ==========================================
-  // KEEP REFS UPDATED
-  // ==========================================
+    case "portrait":
+      return {
+        brightness: 1.08,
+        contrast: 1.05,
+        saturation: 1.08,
+        soft: true,
+      };
 
-  useEffect(() => {
-    currentPathRef.current = currentPath;
-  }, [currentPath]);
+    case "soft":
+      return {
+        brightness: 1.08,
+        contrast: 0.88,
+        saturation: 0.95,
+        soft: true,
+      };
 
-  useEffect(() => {
-    isProcessingRef.current = isProcessing;
-  }, [isProcessing]);
+    case "vivid":
+      return {
+        brightness: 1.05,
+        contrast: 1.15,
+        saturation: 1.65,
+      };
 
-  // ==========================================
-  // CLEANUP
-  // ==========================================
+    case "dramatic":
+      return {
+        brightness: 0.92,
+        contrast: 1.5,
+        saturation: 1.08,
+      };
 
-  useEffect(() => {
-    return () => {
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-      }
+    case "face-glow":
+      return {
+        brightness: 1.15,
+        contrast: 0.94,
+        saturation: 1.08,
+        soft: true,
+      };
 
-      if (adjustTimerRef.current) {
-        clearTimeout(adjustTimerRef.current);
-      }
-    };
-  }, []);
+    case "portrait-enhance":
+      return {
+        brightness: 1.08,
+        contrast: 1.18,
+        saturation: 1.15,
+        soft: true,
+      };
 
-  // ==========================================
-  // APPLY RESULT
-  // ==========================================
-
-  const applyResult = useCallback(
-    (responseData, context = "operation") => {
-      if (!responseData?.success) {
-        throw new Error(
-          responseData?.message || "Operation failed."
-        );
-      }
-
-      const d = responseData.data || responseData;
-
-      const filename = apiService.resolveImageFilename(d);
-
-      if (DEBUG_IMAGE_EDIT) {
-        console.log(
-          `[IMAGE EDIT RESULT] (${context})`,
-          {
-            responseData,
-            filename,
-            preview: d.preview,
-            resultUrl: d.resultUrl,
-            path: d.path,
-            finalPreviewUrl: filename
-              ? apiService.buildPreviewUrl(filename)
-              : null,
-          }
-        );
-      }
-
-      if (!filename) {
-        throw new Error(
-          "Backend ne valid image filename return nahi kiya. Deploy latest backend and retry."
-        );
-      }
-
-      setCurrentPath(filename);
-
-      setResultUrl(
-        apiService.buildPreviewUrl(filename)
-      );
-
-      setResultLoadError(false);
-
-      if (d.width && d.height) {
-        setMetadata((prev) => ({
-          ...(prev || {}),
-          width: d.width,
-          height: d.height,
-          format:
-            d.format ||
-            prev?.format ||
-            "jpeg",
-        }));
-      }
-
-      setSuccessMessage(
-        responseData.message || null
-      );
-
-      setImageState("loaded");
-    },
-    []
-  );
-
-  // ==========================================
-  // COMMON OPERATION RUNNER
-  // ==========================================
-
-  const runOperation = useCallback(
-    async (
-      message,
-      fn,
-      context,
-      onError
-    ) => {
-      if (isProcessingRef.current) {
-        return;
-      }
-
-      setIsProcessing(true);
-      setErrorMessage(null);
-      setSuccessMessage(null);
-      setProcessingMessage(message);
-
-      try {
-        const response = await fn();
-
-        applyResult(
-          response.data,
-          context
-        );
-      } catch (err) {
-        console.error(
-          `[ImageEditor] ${context} error:`,
-          err
-        );
-
-        setErrorMessage(
-          err.message ||
-            "Operation failed."
-        );
-
-        if (onError) {
-          onError();
-        }
-      } finally {
-        setIsProcessing(false);
-        setProcessingMessage("");
-      }
-    },
-    [applyResult]
-  );
-
-  // ==========================================
-  // FILE VALIDATION
-  // ==========================================
-
-  const validateFile = useCallback(
-    (file) => {
-      if (!file) {
-        throw new Error(
-          "No file selected."
-        );
-      }
-
-      if (
-        !ALLOWED_TYPES.includes(
-          file.type
-        )
-      ) {
-        throw new Error(
-          `Invalid file type: ${
-            file.type || "unknown"
-          }. Allowed: JPG, PNG, WebP.`
-        );
-      }
-
-      if (
-        file.size > MAX_FILE_SIZE
-      ) {
-        const sizeMB = (
-          file.size /
-          (1024 * 1024)
-        ).toFixed(1);
-
-        throw new Error(
-          `File too large (${sizeMB}MB). Maximum is 10MB.`
-        );
-      }
-
-      return true;
-    },
-    []
-  );
-
-  // ==========================================
-  // UPLOAD IMAGE
-  // ==========================================
-
-  const handleFile = useCallback(
-    async (file) => {
-      if (
-        isProcessingRef.current
-      ) {
-        return;
-      }
-
-      setErrorMessage(null);
-
-      try {
-        validateFile(file);
-      } catch (err) {
-        setErrorMessage(
-          err.message
-        );
-        return;
-      }
-
-      setIsProcessing(true);
-
-      setProcessingMessage(
-        "Uploading image..."
-      );
-
-      setResultUrl(null);
-      setResultLoadError(false);
-
-      setSuccessMessage(null);
-
-      setActiveFilter(null);
-
-      setAdjustments({
+    case "natural":
+    default:
+      return {
         brightness: 1,
         contrast: 1,
         saturation: 1,
-      });
+      };
+  }
+}
 
-      setAiInstruction("");
+// ============================================================
+// IMAGE PROCESSOR
+// ============================================================
 
+function processCanvas(sourceCanvas, settings = {}) {
+  const width = sourceCanvas.width;
+  const height = sourceCanvas.height;
+
+  const output = createCanvas(width, height);
+  const ctx = output.getContext("2d", {
+    willReadFrequently: true,
+  });
+
+  const {
+    brightness = 1,
+    contrast = 1,
+    saturation = 1,
+    temperature = 0,
+    sepia = 0,
+    soft = false,
+  } = settings;
+
+  ctx.save();
+
+  const cssFilters = [
+    `brightness(${brightness})`,
+    `contrast(${contrast})`,
+    `saturate(${saturation})`,
+    sepia > 0 ? `sepia(${sepia})` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  ctx.filter = cssFilters;
+
+  ctx.drawImage(
+    sourceCanvas,
+    0,
+    0,
+    width,
+    height
+  );
+
+  ctx.restore();
+
+  // ----------------------------------------------------------
+  // Temperature adjustment
+  // ----------------------------------------------------------
+
+  if (temperature !== 0) {
+    const imageData = ctx.getImageData(
+      0,
+      0,
+      width,
+      height
+    );
+
+    const data = imageData.data;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const amount = temperature;
+
+      data[i] = clamp(
+        data[i] + amount,
+        0,
+        255
+      );
+
+      data[i + 2] = clamp(
+        data[i + 2] - amount,
+        0,
+        255
+      );
+    }
+
+    ctx.putImageData(
+      imageData,
+      0,
+      0
+    );
+  }
+
+  // ----------------------------------------------------------
+  // Soft glow
+  // ----------------------------------------------------------
+
+  if (soft) {
+    const glow = createCanvas(
+      width,
+      height
+    );
+
+    const glowCtx = glow.getContext("2d");
+
+    glowCtx.filter =
+      "blur(8px) brightness(1.08)";
+
+    glowCtx.globalAlpha = 0.12;
+
+    glowCtx.drawImage(
+      output,
+      0,
+      0,
+      width,
+      height
+    );
+
+    ctx.drawImage(
+      glow,
+      0,
+      0,
+      width,
+      height
+    );
+  }
+
+  return output;
+}
+
+// ============================================================
+// BACKGROUND BLUR
+// ============================================================
+//
+// This is a FREE local approximation.
+// It blurs the outer/edge region rather than performing
+// AI-level human segmentation.
+// ============================================================
+
+function applyLocalBackgroundBlur(
+  sourceCanvas,
+  intensity
+) {
+  const width = sourceCanvas.width;
+  const height = sourceCanvas.height;
+
+  const output = createCanvas(
+    width,
+    height
+  );
+
+  const ctx = output.getContext("2d");
+
+  const blurAmount =
+    intensity === "high"
+      ? 18
+      : intensity === "low"
+      ? 7
+      : 12;
+
+  // Blurred copy
+  ctx.save();
+
+  ctx.filter = `blur(${blurAmount}px)`;
+
+  ctx.drawImage(
+    sourceCanvas,
+    0,
+    0,
+    width,
+    height
+  );
+
+  ctx.restore();
+
+  // Center sharp region.
+  // This gives a portrait-style local blur.
+  const mask = createCanvas(
+    width,
+    height
+  );
+
+  const maskCtx = mask.getContext("2d");
+
+  const gradient =
+    maskCtx.createRadialGradient(
+      width * 0.5,
+      height * 0.43,
+      Math.min(width, height) * 0.12,
+      width * 0.5,
+      height * 0.45,
+      Math.min(width, height) * 0.42
+    );
+
+  gradient.addColorStop(
+    0,
+    "rgba(0,0,0,1)"
+  );
+
+  gradient.addColorStop(
+    0.65,
+    "rgba(0,0,0,0.95)"
+  );
+
+  gradient.addColorStop(
+    1,
+    "rgba(0,0,0,0)"
+  );
+
+  maskCtx.fillStyle = gradient;
+
+  maskCtx.fillRect(
+    0,
+    0,
+    width,
+    height
+  );
+
+  const original =
+    createCanvas(width, height);
+
+  original
+    .getContext("2d")
+    .drawImage(
+      sourceCanvas,
+      0,
+      0,
+      width,
+      height
+    );
+
+  const originalData =
+    original
+      .getContext("2d")
+      .getImageData(
+        0,
+        0,
+        width,
+        height
+      );
+
+  const blurredData =
+    output
+      .getContext("2d")
+      .getImageData(
+        0,
+        0,
+        width,
+        height
+      );
+
+  const maskData =
+    maskCtx.getImageData(
+      0,
+      0,
+      width,
+      height
+    );
+
+  for (
+    let i = 0;
+    i < originalData.data.length;
+    i += 4
+  ) {
+    const alpha =
+      maskData.data[i] / 255;
+
+    blurredData.data[i] =
+      originalData.data[i] * alpha +
+      blurredData.data[i] * (1 - alpha);
+
+    blurredData.data[i + 1] =
+      originalData.data[i + 1] * alpha +
+      blurredData.data[i + 1] * (1 - alpha);
+
+    blurredData.data[i + 2] =
+      originalData.data[i + 2] * alpha +
+      blurredData.data[i + 2] * (1 - alpha);
+
+    blurredData.data[i + 3] = 255;
+  }
+
+  const finalCanvas =
+    createCanvas(width, height);
+
+  finalCanvas
+    .getContext("2d")
+    .putImageData(
+      blurredData,
+      0,
+      0
+    );
+
+  return finalCanvas;
+}
+
+// ============================================================
+// LOCAL UPSCALE
+// ============================================================
+
+function upscaleCanvas(sourceCanvas, scale = 2) {
+  const output = createCanvas(
+    sourceCanvas.width * scale,
+    sourceCanvas.height * scale
+  );
+
+  const ctx = output.getContext("2d");
+
+  ctx.imageSmoothingEnabled = true;
+
+  ctx.imageSmoothingQuality =
+    "high";
+
+  ctx.drawImage(
+    sourceCanvas,
+    0,
+    0,
+    output.width,
+    output.height
+  );
+
+  return output;
+}
+
+// ============================================================
+// LOCAL ENHANCE
+// ============================================================
+
+function enhanceCanvas(sourceCanvas) {
+  return processCanvas(
+    sourceCanvas,
+    {
+      brightness: 1.08,
+      contrast: 1.12,
+      saturation: 1.12,
+      soft: true,
+    }
+  );
+}
+
+// ============================================================
+// HAIRSTYLE LOCAL EFFECT
+// ============================================================
+//
+// These are decorative/local overlays.
+// They are NOT AI hair replacement.
+// ============================================================
+
+function applyHairstyleCanvas(
+  sourceCanvas,
+  styleId
+) {
+  if (styleId === "original") {
+    return sourceCanvas;
+  }
+
+  const output = createCanvas(
+    sourceCanvas.width,
+    sourceCanvas.height
+  );
+
+  const ctx = output.getContext("2d");
+
+  ctx.drawImage(
+    sourceCanvas,
+    0,
+    0
+  );
+
+  const w = output.width;
+  const h = output.height;
+
+  // Approximate head region.
+  const cx = w * 0.5;
+  const cy = h * 0.29;
+
+  const rx = w * 0.18;
+  const ry = h * 0.14;
+
+  ctx.save();
+
+  ctx.fillStyle =
+    "rgba(35,25,20,0.82)";
+
+  ctx.strokeStyle =
+    "rgba(20,15,12,0.95)";
+
+  ctx.lineWidth =
+    Math.max(2, w * 0.006);
+
+  // ----------------------------------------------------------
+  // Base hair shape
+  // ----------------------------------------------------------
+
+  ctx.beginPath();
+
+  ctx.ellipse(
+    cx,
+    cy,
+    rx,
+    ry,
+    0,
+    Math.PI,
+    Math.PI * 2
+  );
+
+  ctx.fill();
+
+  // ----------------------------------------------------------
+  // Style-specific changes
+  // ----------------------------------------------------------
+
+  if (styleId === "short-hair") {
+    for (let i = -5; i <= 5; i++) {
+      ctx.beginPath();
+
+      ctx.moveTo(
+        cx + i * rx * 0.17,
+        cy - ry * 0.8
+      );
+
+      ctx.lineTo(
+        cx + i * rx * 0.19,
+        cy - ry * 1.08
+      );
+
+      ctx.stroke();
+    }
+  }
+
+  if (styleId === "side-part") {
+    ctx.lineWidth =
+      Math.max(3, w * 0.008);
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+      cx - rx * 0.05,
+      cy - ry
+    );
+
+    ctx.quadraticCurveTo(
+      cx + rx * 0.25,
+      cy - ry * 0.3,
+      cx + rx * 0.75,
+      cy - ry * 0.15
+    );
+
+    ctx.stroke();
+  }
+
+  if (styleId === "classic") {
+    ctx.beginPath();
+
+    ctx.ellipse(
+      cx,
+      cy - ry * 0.25,
+      rx * 1.12,
+      ry * 0.9,
+      0,
+      Math.PI,
+      Math.PI * 2
+    );
+
+    ctx.fill();
+  }
+
+  if (styleId === "crew-cut") {
+    ctx.beginPath();
+
+    ctx.ellipse(
+      cx,
+      cy,
+      rx * 0.92,
+      ry * 0.75,
+      0,
+      Math.PI,
+      Math.PI * 2
+    );
+
+    ctx.fill();
+  }
+
+  if (styleId === "textured") {
+    for (let i = 0; i < 22; i++) {
+      const x =
+        cx - rx +
+        Math.random() * rx * 2;
+
+      const y =
+        cy - Math.random() * ry;
+
+      ctx.beginPath();
+
+      ctx.moveTo(x, y);
+
+      ctx.lineTo(
+        x + (Math.random() - 0.5) * rx * 0.5,
+        y - ry * 0.35
+      );
+
+      ctx.stroke();
+    }
+  }
+
+  if (styleId === "wavy") {
+    ctx.lineWidth =
+      Math.max(2, w * 0.005);
+
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath();
+
+      ctx.moveTo(
+        cx + i * rx * 0.35,
+        cy
+      );
+
+      ctx.quadraticCurveTo(
+        cx + i * rx * 0.35 + rx * 0.18,
+        cy - ry * 0.6,
+        cx + i * rx * 0.35,
+        cy - ry
+      );
+
+      ctx.stroke();
+    }
+  }
+
+  if (styleId === "curly") {
+    ctx.lineWidth =
+      Math.max(2, w * 0.005);
+
+    for (let i = 0; i < 14; i++) {
+      const angle =
+        Math.random() *
+        Math.PI *
+        2;
+
+      const x =
+        cx +
+        Math.cos(angle) *
+          rx *
+          (0.3 + Math.random() * 0.7);
+
+      const y =
+        cy -
+        Math.random() *
+          ry *
+          0.9;
+
+      ctx.beginPath();
+
+      ctx.arc(
+        x,
+        y,
+        Math.max(4, w * 0.012),
+        0,
+        Math.PI * 2
+      );
+
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore();
+
+  return output;
+}
+
+// ============================================================
+// TEXT OVERLAY
+// ============================================================
+
+function addTextToCanvas(
+  sourceCanvas,
+  text,
+  options = {}
+) {
+  const output = createCanvas(
+    sourceCanvas.width,
+    sourceCanvas.height
+  );
+
+  const ctx = output.getContext("2d");
+
+  ctx.drawImage(
+    sourceCanvas,
+    0,
+    0
+  );
+
+  const {
+    x = 0.5,
+    y = 0.5,
+    fontSize = 48,
+    color = "#ffffff",
+    background = "transparent",
+    align = "center",
+  } = options;
+
+  const pxFontSize = Math.max(
+    12,
+    Math.round(
+      Math.min(
+        sourceCanvas.width,
+        sourceCanvas.height
+      ) *
+        (fontSize / 1000)
+    )
+  );
+
+  ctx.save();
+
+  ctx.font = `700 ${pxFontSize}px Arial, sans-serif`;
+
+  ctx.textAlign = align;
+
+  ctx.textBaseline =
+    "middle";
+
+  const textWidth =
+    ctx.measureText(text).width;
+
+  if (
+    background !==
+    "transparent"
+  ) {
+    const padding =
+      pxFontSize * 0.35;
+
+    ctx.fillStyle =
+      background;
+
+    ctx.fillRect(
+      sourceCanvas.width * x -
+        textWidth / 2 -
+        padding,
+      sourceCanvas.height * y -
+        pxFontSize / 2 -
+        padding / 2,
+      textWidth +
+        padding * 2,
+      pxFontSize +
+        padding
+    );
+  }
+
+  ctx.fillStyle = color;
+
+  ctx.fillText(
+    text,
+    sourceCanvas.width * x,
+    sourceCanvas.height * y
+  );
+
+  ctx.restore();
+
+  return output;
+}
+
+// ============================================================
+// COMPONENT
+// ============================================================
+
+function ImageEditor() {
+  // ----------------------------------------------------------
+  // SOURCE
+  // ----------------------------------------------------------
+
+  const [originalUrl, setOriginalUrl] =
+    useState(null);
+
+  const [originalCanvas, setOriginalCanvas] =
+    useState(null);
+
+  const [currentCanvas, setCurrentCanvas] =
+    useState(null);
+
+  // ----------------------------------------------------------
+  // UI
+  // ----------------------------------------------------------
+
+  const [imageState, setImageState] =
+    useState("empty");
+
+  const [isProcessing, setIsProcessing] =
+    useState(false);
+
+  const [processingMessage, setProcessingMessage] =
+    useState("");
+
+  const [errorMessage, setErrorMessage] =
+    useState(null);
+
+  const [successMessage, setSuccessMessage] =
+    useState(null);
+
+  const [activeFilter, setActiveFilter] =
+    useState(null);
+
+  const [blurIntensity, setBlurIntensity] =
+    useState("medium");
+
+  const [adjustments, setAdjustments] =
+    useState({
+      brightness: 1,
+      contrast: 1,
+      saturation: 1,
+    });
+
+  const [metadata, setMetadata] =
+    useState(null);
+
+  // ----------------------------------------------------------
+  // TEXT
+  // ----------------------------------------------------------
+
+  const [textValue, setTextValue] =
+    useState("");
+
+  const [textColor, setTextColor] =
+    useState("#ffffff");
+
+  const [textBackground, setTextBackground] =
+    useState("transparent");
+
+  const [textX, setTextX] =
+    useState(50);
+
+  const [textY, setTextY] =
+    useState(50);
+
+  const [textSize, setTextSize] =
+    useState(48);
+
+  // ----------------------------------------------------------
+  // REFS
+  // ----------------------------------------------------------
+
+  const fileInputRef =
+    useRef(null);
+
+  const blobUrlRef =
+    useRef(null);
+
+  // ==========================================================
+  // CLEANUP
+  // ==========================================================
+
+  useEffect(() => {
+    return () => {
       if (blobUrlRef.current) {
         URL.revokeObjectURL(
           blobUrlRef.current
         );
       }
+    };
+  }, []);
 
-      const localUrl =
-        URL.createObjectURL(file);
+  // ==========================================================
+  // PROCESS WRAPPER
+  // ==========================================================
 
-      blobUrlRef.current =
-        localUrl;
-
-      setOriginalUrl(localUrl);
-
-      try {
-        const response =
-          await apiService.uploadImage(
-            file
+  const runLocalOperation =
+    useCallback(
+      async (
+        message,
+        operation
+      ) => {
+        if (!currentCanvas) {
+          setErrorMessage(
+            "Pehle image upload karo."
           );
 
-        const responseData =
-          response.data;
+          return;
+        }
+
+        if (isProcessing) {
+          return;
+        }
+
+        setIsProcessing(true);
+        setProcessingMessage(
+          message
+        );
+        setErrorMessage(null);
+        setSuccessMessage(null);
+
+        try {
+          await new Promise(
+            (resolve) =>
+              requestAnimationFrame(
+                resolve
+              )
+          );
+
+          const result =
+            await operation(
+              currentCanvas
+            );
+
+          if (!result) {
+            throw new Error(
+              "Local image processing failed."
+            );
+          }
+
+          setCurrentCanvas(
+            result
+          );
+
+          setSuccessMessage(
+            "Done — image locally processed. No AI API used."
+          );
+        } catch (error) {
+          console.error(
+            "[LOCAL IMAGE EDIT]",
+            error
+          );
+
+          setErrorMessage(
+            error?.message ||
+              "Image processing failed."
+          );
+        } finally {
+          setIsProcessing(false);
+          setProcessingMessage("");
+        }
+      },
+      [
+        currentCanvas,
+        isProcessing,
+      ]
+    );
+
+  // ==========================================================
+  // VALIDATE FILE
+  // ==========================================================
+
+  const validateFile =
+    useCallback(
+      (file) => {
+        if (!file) {
+          throw new Error(
+            "No file selected."
+          );
+        }
 
         if (
-          !responseData.success
+          !ALLOWED_TYPES.includes(
+            file.type
+          )
         ) {
           throw new Error(
-            responseData.message ||
-              "Upload failed."
+            "Only JPG, PNG and WebP images are supported."
           );
         }
 
-        const d =
-          responseData.data ||
-          responseData;
-
-        const filename =
-          apiService.resolveImageFilename(
-            d
-          ) ||
-          apiService.extractBasename(
-            d.path
-          );
-
-        if (DEBUG_IMAGE_EDIT) {
-          console.log(
-            "[IMAGE EDIT RESULT] (upload)",
-            {
-              responseData,
-              filename,
-              finalPreviewUrl:
-                filename
-                  ? apiService.buildPreviewUrl(
-                      filename
-                    )
-                  : null,
-            }
-          );
-        }
-
-        if (!filename) {
+        if (
+          file.size >
+          MAX_FILE_SIZE
+        ) {
           throw new Error(
-            "Upload succeeded but server returned no valid filename."
+            "Maximum image size is 10MB."
           );
         }
+      },
+      []
+    );
 
-        setOriginalPath(
-          filename
-        );
+  // ==========================================================
+  // UPLOAD
+  // ==========================================================
 
-        setCurrentPath(
-          filename
-        );
+  const handleFile =
+    useCallback(
+      async (file) => {
+        try {
+          validateFile(file);
 
-        setResultUrl(
-          apiService.buildPreviewUrl(
-            filename
-          )
-        );
+          setErrorMessage(null);
+          setSuccessMessage(null);
+          setIsProcessing(true);
+          setProcessingMessage(
+            "Loading image locally..."
+          );
 
-        setResultLoadError(false);
+          if (
+            blobUrlRef.current
+          ) {
+            URL.revokeObjectURL(
+              blobUrlRef.current
+            );
+          }
 
-        setMetadata({
-          width: d.width,
-          height: d.height,
-          format: d.format,
-          size: d.size,
-        });
+          const url =
+            URL.createObjectURL(
+              file
+            );
 
-        setImageState(
-          "loaded"
-        );
+          blobUrlRef.current =
+            url;
 
-        setSuccessMessage(
-          "Image uploaded. Start editing!"
-        );
-      } catch (err) {
-        console.error(
-          "[ImageEditor] Upload error:",
-          err
-        );
+          const img =
+            await loadImage(
+              url
+            );
 
-        setImageState(
-          "error"
-        );
+          const canvas =
+            createCanvas(
+              img.naturalWidth ||
+                img.width,
+              img.naturalHeight ||
+                img.height
+            );
 
-        setErrorMessage(
-          err.message ||
-            "Failed to upload image."
-        );
+          const ctx =
+            canvas.getContext(
+              "2d"
+            );
 
-        setOriginalUrl(null);
-        setOriginalPath(null);
-        setCurrentPath(null);
-      } finally {
-        setIsProcessing(false);
-        setProcessingMessage("");
-      }
-    },
-    [validateFile]
-  );
+          ctx.drawImage(
+            img,
+            0,
+            0,
+            canvas.width,
+            canvas.height
+          );
 
-  // ==========================================
-  // FILE INPUT
-  // ==========================================
+          setOriginalUrl(
+            url
+          );
+
+          setOriginalCanvas(
+            canvas
+          );
+
+          setCurrentCanvas(
+            canvas
+          );
+
+          setMetadata({
+            width:
+              canvas.width,
+            height:
+              canvas.height,
+            format:
+              file.type
+                .split("/")
+                .pop()
+                ?.toUpperCase(),
+            size:
+              file.size,
+          });
+
+          setImageState(
+            "loaded"
+          );
+
+          setActiveFilter(
+            null
+          );
+
+          setAdjustments({
+            brightness: 1,
+            contrast: 1,
+            saturation: 1,
+          });
+
+          setSuccessMessage(
+            "Image loaded locally. Editing is free."
+          );
+        } catch (error) {
+          console.error(
+            "[LOCAL UPLOAD]",
+            error
+          );
+
+          setErrorMessage(
+            error?.message ||
+              "Could not load image."
+          );
+
+          setImageState(
+            "error"
+          );
+        } finally {
+          setIsProcessing(false);
+          setProcessingMessage("");
+        }
+      },
+      [validateFile]
+    );
+
+  // ==========================================================
+  // INPUT
+  // ==========================================================
 
   const handleFileInput =
     useCallback(
-      (e) => {
+      (event) => {
         const file =
-          e.target.files?.[0];
+          event.target.files?.[0];
 
         if (file) {
           handleFile(file);
         }
 
-        e.target.value = "";
+        event.target.value =
+          "";
       },
       [handleFile]
     );
 
-  // ==========================================
-  // DRAG & DROP
-  // ==========================================
+  // ==========================================================
+  // DRAG DROP
+  // ==========================================================
 
   const handleDrop =
     useCallback(
-      (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-
-        setDragOver(false);
+      (event) => {
+        event.preventDefault();
+        event.stopPropagation();
 
         const file =
-          e.dataTransfer?.files?.[0];
+          event.dataTransfer
+            ?.files?.[0];
 
         if (file) {
           handleFile(file);
@@ -567,242 +1294,296 @@ function ImageEditor() {
     );
 
   const handleDragOver =
-    useCallback((e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setDragOver(true);
-    }, []);
+    useCallback(
+      (event) => {
+        event.preventDefault();
+      },
+      []
+    );
 
-  const handleDragLeave =
-    useCallback((e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setDragOver(false);
-    }, []);
-
-  // ==========================================
-  // APPLY FILTER
-  // ==========================================
+  // ==========================================================
+  // FILTER
+  // ==========================================================
 
   const applyFilter =
     useCallback(
       (filterId) => {
-        const path =
-          currentPathRef.current;
+        const settings =
+          getFilterSettings(
+            filterId
+          );
 
-        if (!path) {
-          return;
-        }
-
-        runOperation(
-          `Applying ${filterId} filter...`,
-          () =>
-            apiService.applyFilter(
-              path,
-              filterId
-            ),
-          `filter:${filterId}`,
-          () =>
-            setActiveFilter(null)
+        runLocalOperation(
+          `Applying ${filterId} locally...`,
+          (canvas) =>
+            processCanvas(
+              canvas,
+              settings
+            )
         );
 
         setActiveFilter(
           filterId
         );
       },
-      [runOperation]
+      [runLocalOperation]
     );
 
-  // ==========================================
-  // APPLY ADJUSTMENTS
-  // ==========================================
+  // ==========================================================
+  // ADJUSTMENTS
+  // ==========================================================
 
-  const applyAdjustmentsNow =
+  const applyAdjustments =
     useCallback(
-      (adj) => {
-        const path =
-          currentPathRef.current;
-
-        if (!path) {
+      (newAdjustments) => {
+        if (!originalCanvas) {
           return;
         }
 
-        runOperation(
-          "Applying adjustments...",
-          () =>
-            apiService.applyAdjustments(
-              path,
-              adj
-            ),
-          "adjust"
+        setIsProcessing(true);
+        setProcessingMessage(
+          "Applying adjustments locally..."
         );
+
+        setTimeout(() => {
+          try {
+            const result =
+              processCanvas(
+                originalCanvas,
+                newAdjustments
+              );
+
+            setCurrentCanvas(
+              result
+            );
+
+            setSuccessMessage(
+              "Adjustments applied locally."
+            );
+          } catch (error) {
+            setErrorMessage(
+              error.message
+            );
+          } finally {
+            setIsProcessing(
+              false
+            );
+            setProcessingMessage(
+              ""
+            );
+          }
+        }, 0);
       },
-      [runOperation]
+      [originalCanvas]
     );
 
   const handleAdjustmentChange =
     useCallback(
       (key, value) => {
-        const newAdjustments = {
+        const next = {
           ...adjustments,
-          [key]: parseFloat(value),
+          [key]: Number(value),
         };
 
         setAdjustments(
-          newAdjustments
+          next
         );
 
-        if (
-          adjustTimerRef.current
-        ) {
-          clearTimeout(
-            adjustTimerRef.current
-          );
-        }
-
-        adjustTimerRef.current =
-          setTimeout(() => {
-            applyAdjustmentsNow(
-              newAdjustments
-            );
-          }, 600);
+        applyAdjustments(
+          next
+        );
       },
       [
         adjustments,
-        applyAdjustmentsNow,
+        applyAdjustments,
       ]
     );
 
-  // ==========================================
-  // QUICK ACTIONS
-  // ==========================================
+  // ==========================================================
+  // QUICK ACTION
+  // ==========================================================
 
   const handleQuickAction =
     useCallback(
       (actionId) => {
-        const path =
-          currentPathRef.current;
-
-        if (!path) {
-          return;
-        }
-
         switch (actionId) {
           case "enhance":
-            runOperation(
-              "Enhancing image...",
-              () =>
-                apiService.enhanceImage(
-                  path
-                ),
-              "enhance"
+            runLocalOperation(
+              "Enhancing locally...",
+              (canvas) =>
+                enhanceCanvas(
+                  canvas
+                )
             );
             break;
 
           case "upscale":
-            runOperation(
-              "Upscaling image 2x...",
-              () =>
-                apiService.upscaleImage(
-                  path,
+            runLocalOperation(
+              "Upscaling locally...",
+              (canvas) =>
+                upscaleCanvas(
+                  canvas,
                   2
-                ),
-              "upscale"
+                )
             );
             break;
 
-          case "removeBg":
-            runOperation(
-              "Removing background...",
-              () =>
-                apiService.removeBackground(
-                  path
-                ),
-              "removeBg"
-            );
-            break;
-
-          case "bw_q":
+          case "bw":
             applyFilter("bw");
             break;
 
-          case "warm_q":
+          case "warm":
             applyFilter("warm");
             break;
 
-          case "vintage_q":
-            applyFilter("vintage");
+          case "vintage":
+            applyFilter(
+              "vintage"
+            );
             break;
 
           default:
-            setErrorMessage(
-              `Unknown action: ${actionId}`
-            );
+            break;
         }
       },
       [
-        runOperation,
+        runLocalOperation,
         applyFilter,
       ]
     );
 
-  // ==========================================
+  // ==========================================================
   // BACKGROUND BLUR
-  // ==========================================
+  // ==========================================================
 
   const handleBackgroundBlur =
     useCallback(
-      (intensity) => {
-        const path =
-          currentPathRef.current;
+      (level) => {
+        setBlurIntensity(
+          level
+        );
 
-        if (!path) {
+        runLocalOperation(
+          `Applying ${level} background blur locally...`,
+          (canvas) =>
+            applyLocalBackgroundBlur(
+              canvas,
+              level
+            )
+        );
+      },
+      [runLocalOperation]
+    );
+
+  // ==========================================================
+  // HAIRSTYLE
+  // ==========================================================
+
+  const handleHairstyle =
+    useCallback(
+      (styleId) => {
+        if (
+          styleId ===
+          "original"
+        ) {
+          if (
+            originalCanvas
+          ) {
+            setCurrentCanvas(
+              originalCanvas
+            );
+
+            setSuccessMessage(
+              "Original restored."
+            );
+          }
+
           return;
         }
 
-        setBlurIntensity(
-          intensity
-        );
-
-        runOperation(
-          `Blurring background (${intensity})...`,
-          () =>
-            apiService.backgroundBlur(
-              path,
-              intensity
-            ),
-          "bg-blur"
+        runLocalOperation(
+          `Applying ${styleId} local hairstyle effect...`,
+          (canvas) =>
+            applyHairstyleCanvas(
+              canvas,
+              styleId
+            )
         );
       },
-      [runOperation]
+      [
+        originalCanvas,
+        runLocalOperation,
+      ]
     );
 
-  // ==========================================
-  // RESET TO ORIGINAL
-  //
-  // IMPORTANT:
-  // This is BEFORE handleHairstyle
-  // ==========================================
+  // ==========================================================
+  // ADD / CHANGE TEXT
+  // ==========================================================
 
-  const handleReset =
+  const handleAddText =
     useCallback(() => {
-      if (!originalPath) {
+      if (
+        !textValue.trim()
+      ) {
+        setErrorMessage(
+          "Text enter karo."
+        );
+
         return;
       }
 
-      setCurrentPath(
-        originalPath
+      runLocalOperation(
+        "Adding text locally...",
+        (canvas) =>
+          addTextToCanvas(
+            canvas,
+            textValue.trim(),
+            {
+              x: textX / 100,
+              y: textY / 100,
+              fontSize:
+                textSize,
+              color:
+                textColor,
+              background:
+                textBackground,
+            }
+          )
+      );
+    },
+    [
+      textValue,
+      textX,
+      textY,
+      textSize,
+      textColor,
+      textBackground,
+      runLocalOperation,
+    ]);
+
+  // ==========================================================
+  // RESET
+  // ==========================================================
+
+  const handleReset =
+    useCallback(() => {
+      if (
+        !originalCanvas
+      ) {
+        return;
+      }
+
+      setCurrentCanvas(
+        originalCanvas
       );
 
-      setResultUrl(
-        apiService.buildPreviewUrl(
-          originalPath
-        )
+      setActiveFilter(
+        null
       );
 
-      setResultLoadError(false);
-
-      setActiveFilter(null);
+      setBlurIntensity(
+        "medium"
+      );
 
       setAdjustments({
         brightness: 1,
@@ -810,99 +1591,18 @@ function ImageEditor() {
         saturation: 1,
       });
 
-      setErrorMessage(null);
-
       setSuccessMessage(
-        "Reset to original image."
+        "Reset to original."
       );
-    }, [originalPath]);
 
-  // ==========================================
-  // HAIRSTYLE PREVIEW — AI
-  // ==========================================
+      setErrorMessage(
+        null
+      );
+    }, [originalCanvas]);
 
-  const handleHairstyle =
-    useCallback(
-      (styleId) => {
-        const path =
-          currentPathRef.current;
-
-        if (!path) {
-          return;
-        }
-
-        // Original button
-        if (
-          styleId === "original"
-        ) {
-          handleReset();
-          return;
-        }
-
-        runOperation(
-          `Applying hairstyle: ${styleId}...`,
-          () =>
-            apiService.applyHairstyle(
-              path,
-              styleId
-            ),
-          "hairstyle"
-        );
-      },
-      [
-        runOperation,
-        handleReset,
-      ]
-    );
-
-  // ==========================================
-  // AI EDIT
-  // ==========================================
-
-  const handleAiEdit =
-    useCallback(
-      (instruction) => {
-        const path =
-          currentPathRef.current;
-
-        if (
-          !path ||
-          !instruction.trim()
-        ) {
-          return;
-        }
-
-        runOperation(
-          `AI editing: "${instruction.trim()}"...`,
-          () =>
-            apiService.aiEditImage(
-              path,
-              instruction.trim()
-            ),
-          "ai-edit"
-        );
-      },
-      [runOperation]
-    );
-
-  const handleAiEditSubmit =
-    useCallback(
-      (e) => {
-        e.preventDefault();
-
-        handleAiEdit(
-          aiInstruction
-        );
-      },
-      [
-        aiInstruction,
-        handleAiEdit,
-      ]
-    );
-
-  // ==========================================
+  // ==========================================================
   // NEW IMAGE
-  // ==========================================
+  // ==========================================================
 
   const handleNewImage =
     useCallback(() => {
@@ -917,50 +1617,89 @@ function ImageEditor() {
           null;
       }
 
-      setOriginalUrl(null);
-      setResultUrl(null);
-      setResultLoadError(false);
+      setOriginalUrl(
+        null
+      );
 
-      setMetadata(null);
+      setOriginalCanvas(
+        null
+      );
 
-      setImageState("empty");
+      setCurrentCanvas(
+        null
+      );
 
-      setOriginalPath(null);
-      setCurrentPath(null);
+      setMetadata(
+        null
+      );
 
-      setActiveFilter(null);
+      setImageState(
+        "empty"
+      );
 
-      setAdjustments({
-        brightness: 1,
-        contrast: 1,
-        saturation: 1,
-      });
+      setErrorMessage(
+        null
+      );
 
-      setErrorMessage(null);
-      setSuccessMessage(null);
-
-      setAiInstruction("");
+      setSuccessMessage(
+        null
+      );
 
       fileInputRef.current?.click();
     }, []);
 
-  // ==========================================
-  // DOWNLOAD
-  // ==========================================
+  // ==========================================================
+  // PREVIEW URL
+  // ==========================================================
 
-  const downloadFilename =
-    currentPath || originalPath;
-
-  const downloadHref =
-    downloadFilename
-      ? apiService.downloadUrl(
-          downloadFilename
+  const currentPreviewUrl =
+    currentCanvas
+      ? canvasToUrl(
+          currentCanvas,
+          "image/png"
         )
       : null;
 
-  // ==========================================
-  // FILE SIZE
-  // ==========================================
+  // ==========================================================
+  // DOWNLOAD
+  // ==========================================================
+
+  const handleDownload =
+    useCallback(() => {
+      if (!currentCanvas) {
+        return;
+      }
+
+      const link =
+        document.createElement(
+          "a"
+        );
+
+      link.href =
+        canvasToUrl(
+          currentCanvas,
+          "image/png"
+        );
+
+      link.download =
+        `edited-image-${Date.now()}.png`;
+
+      document.body.appendChild(
+        link
+      );
+
+      link.click();
+
+      link.remove();
+
+      setSuccessMessage(
+        "Edited image downloaded."
+      );
+    }, [currentCanvas]);
+
+  // ==========================================================
+  // FORMAT SIZE
+  // ==========================================================
 
   const formatFileSize =
     (bytes) => {
@@ -968,64 +1707,46 @@ function ImageEditor() {
         return "N/A";
       }
 
-      const mb =
-        bytes /
-        (1024 * 1024);
-
-      if (mb < 1) {
+      if (
+        bytes <
+        1024 * 1024
+      ) {
         return `${(
           bytes / 1024
         ).toFixed(1)} KB`;
       }
 
-      return `${mb.toFixed(
-        2
-      )} MB`;
+      return `${(
+        bytes /
+        (1024 * 1024)
+      ).toFixed(2)} MB`;
     };
 
-  // ==========================================
-  // UPLOAD AREA
-  // ==========================================
-
-  const showUploadArea =
-    imageState === "empty" ||
-    (
-      imageState === "error" &&
-      !originalUrl
-    );
-
-  // ==========================================
+  // ==========================================================
   // RENDER
-  // ==========================================
+  // ==========================================================
 
   return (
     <div className="image-editor-container">
 
-      {/* ======================================
-          HEADER
-      ====================================== */}
-
       <div className="image-editor-header">
         <h1>
-          AI Image Editor
+          Free Image Editor
         </h1>
 
         <p className="subtitle">
-          Upload, edit, and enhance
-          your images with AI-powered
-          tools — Hindi, Hinglish &
-          English instructions supported
+          Filters, adjustments,
+          blur, hairstyles and text
+          editing — processed locally
+          without AI API charges.
         </p>
       </div>
 
-      {/* ======================================
-          ERROR
-      ====================================== */}
+      {/* ERROR */}
 
       {errorMessage && (
         <div className="error-banner">
-
-          <span className="error-icon">
+          <span>
             ⚠️
           </span>
 
@@ -1036,44 +1757,39 @@ function ImageEditor() {
           <button
             className="error-dismiss"
             onClick={() =>
-              setErrorMessage(null)
+              setErrorMessage(
+                null
+              )
             }
           >
             ✕
           </button>
-
         </div>
       )}
 
-      {/* ======================================
-          SUCCESS
-      ====================================== */}
+      {/* SUCCESS */}
 
       {successMessage &&
         !errorMessage && (
           <div
             className="success-banner"
             style={{
-              display: "flex",
-              alignItems: "center",
+              display:
+                "flex",
+              alignItems:
+                "center",
               gap: "10px",
-              background:
-                "#f0fff4",
-              border:
-                "1px solid #9ae6b4",
-              borderRadius: "8px",
               padding:
                 "12px 16px",
               marginBottom:
                 "20px",
-              color:
-                "#276749",
-              fontSize:
-                "0.9rem",
+              borderRadius:
+                "8px",
             }}
           >
-
-            <span>✓</span>
+            <span>
+              ✓
+            </span>
 
             <span>
               {successMessage}
@@ -1081,10 +1797,6 @@ function ImageEditor() {
 
             <button
               className="error-dismiss"
-              style={{
-                color:
-                  "#276749",
-              }}
               onClick={() =>
                 setSuccessMessage(
                   null
@@ -1093,82 +1805,55 @@ function ImageEditor() {
             >
               ✕
             </button>
-
           </div>
         )}
 
-      {/* ======================================
-          PROCESSING
-      ====================================== */}
+      {/* PROCESSING */}
 
       {isProcessing && (
         <div className="processing-overlay">
-
           <div className="processing-spinner" />
 
           <p>
             {processingMessage ||
-              "Processing..."}
+              "Processing locally..."}
           </p>
-
         </div>
       )}
 
-      {/* ======================================
-          UPLOAD AREA
-      ====================================== */}
+      {/* UPLOAD */}
 
-      {showUploadArea && (
+      {imageState ===
+        "empty" && (
         <div
-          className={`upload-area ${
-            dragOver
-              ? "drag-over"
-              : ""
-          }`}
-          onDrop={handleDrop}
+          className="upload-area"
+          onDrop={
+            handleDrop
+          }
           onDragOver={
             handleDragOver
-          }
-          onDragLeave={
-            handleDragLeave
           }
           onClick={() =>
             fileInputRef.current?.click()
           }
         >
-
           <input
-            ref={fileInputRef}
+            ref={
+              fileInputRef
+            }
             type="file"
             accept=".jpg,.jpeg,.png,.webp"
             onChange={
               handleFileInput
             }
             style={{
-              display: "none",
+              display:
+                "none",
             }}
           />
 
           <div className="upload-icon">
-
-            <svg
-              width="64"
-              height="64"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            >
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line
-                x1="12"
-                y1="3"
-                x2="12"
-                y2="15"
-              />
-            </svg>
-
+            📤
           </div>
 
           <h3>
@@ -1180,27 +1865,21 @@ function ImageEditor() {
           </p>
 
           <p className="upload-hint">
-            Supports JPG, PNG, WebP
-            (up to 10MB)
+            JPG, PNG, WebP —
+            maximum 10MB
           </p>
-
         </div>
       )}
 
-      {/* ======================================
-          EDITOR
-      ====================================== */}
+      {/* EDITOR */}
 
-      {imageState !== "empty" && (
+      {imageState ===
+        "loaded" && (
         <div className="editor-layout">
 
-          {/* ==================================
-              LEFT SIDEBAR
-          ================================== */}
+          {/* SIDEBAR */}
 
           <div className="editor-sidebar">
-
-            {/* NEW IMAGE */}
 
             <button
               className="new-image-btn"
@@ -1211,18 +1890,14 @@ function ImageEditor() {
               📁 New Image
             </button>
 
-            {/* ==================================
-                FILTERS
-            ================================== */}
+            {/* FILTERS */}
 
             <div className="tool-section">
-
               <h3>
                 Filters
               </h3>
 
               <div className="filter-grid">
-
                 {FILTERS.map(
                   (filter) => (
                     <button
@@ -1241,165 +1916,136 @@ function ImageEditor() {
                         )
                       }
                       disabled={
-                        isProcessing ||
-                        !currentPath
+                        isProcessing
                       }
                       title={
                         filter.label
                       }
                     >
-
                       <span className="filter-icon">
-                        {filter.icon}
+                        {
+                          filter.icon
+                        }
                       </span>
 
                       <span className="filter-label">
-                        {filter.label}
+                        {
+                          filter.label
+                        }
                       </span>
-
                     </button>
                   )
                 )}
-
               </div>
 
+              <p
+                style={{
+                  fontSize:
+                    "0.7rem",
+                  color:
+                    "#777",
+                  marginTop:
+                    "8px",
+                }}
+              >
+                ✓ All filters
+                are processed
+                locally.
+                No paid AI API.
+              </p>
             </div>
 
-            {/* ==================================
-                ADJUSTMENTS
-            ================================== */}
+            {/* ADJUSTMENTS */}
 
             <div className="tool-section">
-
               <h3>
                 Adjustments
               </h3>
 
-              {/* BRIGHTNESS */}
+              {[
+                [
+                  "brightness",
+                  "Brightness",
+                  0.3,
+                  2,
+                ],
+                [
+                  "contrast",
+                  "Contrast",
+                  0.3,
+                  2.5,
+                ],
+                [
+                  "saturation",
+                  "Saturation",
+                  0,
+                  3,
+                ],
+              ].map(
+                (item) => {
+                  const [
+                    key,
+                    label,
+                    min,
+                    max,
+                  ] = item;
 
-              <div className="adjustment-group">
+                  return (
+                    <div
+                      className="adjustment-group"
+                      key={key}
+                    >
+                      <label>
+                        {label}
 
-                <label>
-                  Brightness
+                        <span className="adjust-value">
+                          {adjustments[
+                            key
+                          ].toFixed(
+                            1
+                          )}
+                          x
+                        </span>
+                      </label>
 
-                  <span className="adjust-value">
-                    {adjustments.brightness.toFixed(
-                      1
-                    )}
-                    x
-                  </span>
-                </label>
-
-                <input
-                  type="range"
-                  min="0.3"
-                  max="2.0"
-                  step="0.1"
-                  value={
-                    adjustments.brightness
-                  }
-                  onChange={(e) =>
-                    handleAdjustmentChange(
-                      "brightness",
-                      e.target.value
-                    )
-                  }
-                  disabled={
-                    isProcessing ||
-                    !currentPath
-                  }
-                />
-
-              </div>
-
-              {/* CONTRAST */}
-
-              <div className="adjustment-group">
-
-                <label>
-                  Contrast
-
-                  <span className="adjust-value">
-                    {adjustments.contrast.toFixed(
-                      1
-                    )}
-                    x
-                  </span>
-                </label>
-
-                <input
-                  type="range"
-                  min="0.3"
-                  max="2.5"
-                  step="0.1"
-                  value={
-                    adjustments.contrast
-                  }
-                  onChange={(e) =>
-                    handleAdjustmentChange(
-                      "contrast",
-                      e.target.value
-                    )
-                  }
-                  disabled={
-                    isProcessing ||
-                    !currentPath
-                  }
-                />
-
-              </div>
-
-              {/* SATURATION */}
-
-              <div className="adjustment-group">
-
-                <label>
-                  Saturation
-
-                  <span className="adjust-value">
-                    {adjustments.saturation.toFixed(
-                      1
-                    )}
-                    x
-                  </span>
-                </label>
-
-                <input
-                  type="range"
-                  min="0.0"
-                  max="3.0"
-                  step="0.1"
-                  value={
-                    adjustments.saturation
-                  }
-                  onChange={(e) =>
-                    handleAdjustmentChange(
-                      "saturation",
-                      e.target.value
-                    )
-                  }
-                  disabled={
-                    isProcessing ||
-                    !currentPath
-                  }
-                />
-
-              </div>
-
+                      <input
+                        type="range"
+                        min={min}
+                        max={max}
+                        step="0.1"
+                        value={
+                          adjustments[
+                            key
+                          ]
+                        }
+                        onChange={(
+                          event
+                        ) =>
+                          handleAdjustmentChange(
+                            key,
+                            event
+                              .target
+                              .value
+                          )
+                        }
+                        disabled={
+                          isProcessing
+                        }
+                      />
+                    </div>
+                  );
+                }
+              )}
             </div>
 
-            {/* ==================================
-                QUICK ACTIONS
-            ================================== */}
+            {/* QUICK ACTIONS */}
 
             <div className="tool-section">
-
               <h3>
                 Quick Actions
               </h3>
 
               <div className="quick-actions-grid">
-
                 {QUICK_ACTIONS.map(
                   (action) => (
                     <button
@@ -1413,121 +2059,61 @@ function ImageEditor() {
                         )
                       }
                       disabled={
-                        isProcessing ||
-                        !currentPath
+                        isProcessing
                       }
                     >
-
                       <span className="action-icon">
-                        {action.icon}
+                        {
+                          action.icon
+                        }
                       </span>
 
                       <span className="action-label">
-                        {action.label}
+                        {
+                          action.label
+                        }
                       </span>
-
                     </button>
                   )
                 )}
-
               </div>
-
             </div>
 
-            {/* ==================================
-                BACKGROUND BLUR
-            ================================== */}
+            {/* BACKGROUND BLUR */}
 
             <div className="tool-section">
-
               <h3>
                 Background Blur
               </h3>
 
               <div className="quick-actions-grid">
-
                 {BG_BLUR_LEVELS.map(
                   (level) => (
                     <button
-                      key={level}
+                      key={
+                        level.id
+                      }
                       className={`quick-action-btn ${
                         blurIntensity ===
-                        level
+                        level.id
                           ? "active"
                           : ""
                       }`}
                       onClick={() =>
                         handleBackgroundBlur(
-                          level
+                          level.id
                         )
                       }
                       disabled={
-                        isProcessing ||
-                        !currentPath
+                        isProcessing
                       }
                     >
-
-                      <span
-                        className="action-label"
-                        style={{
-                          textTransform:
-                            "capitalize",
-                        }}
-                      >
-                        {level}
-                      </span>
-
+                      {
+                        level.label
+                      }
                     </button>
                   )
                 )}
-
-              </div>
-
-            </div>
-
-            {/* ==================================
-                HAIRSTYLES — AI
-            ================================== */}
-
-            <div className="tool-section">
-
-              <h3>
-                Hairstyles (AI)
-              </h3>
-
-              <div className="filter-grid">
-
-                {HAIRSTYLES.map(
-                  (hs) => (
-                    <button
-                      key={hs.id}
-                      className="filter-btn"
-                      onClick={() =>
-                        handleHairstyle(
-                          hs.id
-                        )
-                      }
-                      disabled={
-                        isProcessing ||
-                        !currentPath
-                      }
-                      title={
-                        hs.label
-                      }
-                    >
-
-                      <span className="filter-icon">
-                        {hs.icon}
-                      </span>
-
-                      <span className="filter-label">
-                        {hs.label}
-                      </span>
-
-                    </button>
-                  )
-                )}
-
               </div>
 
               <p
@@ -1535,128 +2121,306 @@ function ImageEditor() {
                   fontSize:
                     "0.7rem",
                   color:
-                    "#888",
+                    "#777",
                   marginTop:
-                    "6px",
+                    "8px",
                 }}
               >
-                Hairstyle previews
-                AI se generate hote
-                hain. Backend me AI
-                key/configuration
-                available na hone par
-                clear error milega.
+                Local blur
+                approximation —
+                no API.
               </p>
-
             </div>
 
-            {/* ==================================
-                AI EDIT
-            ================================== */}
+            {/* HAIRSTYLES */}
 
             <div className="tool-section">
-
               <h3>
-                AI Edit (Hindi /
-                English)
+                Free Hairstyles
               </h3>
 
-              <form
-                onSubmit={
-                  handleAiEditSubmit
-                }
-                className="ai-edit-form"
+              <div className="filter-grid">
+                {HAIRSTYLES.map(
+                  (style) => (
+                    <button
+                      key={
+                        style.id
+                      }
+                      className="filter-btn"
+                      onClick={() =>
+                        handleHairstyle(
+                          style.id
+                        )
+                      }
+                      disabled={
+                        isProcessing
+                      }
+                    >
+                      <span className="filter-icon">
+                        {
+                          style.icon
+                        }
+                      </span>
+
+                      <span className="filter-label">
+                        {
+                          style.label
+                        }
+                      </span>
+                    </button>
+                  )
+                )}
+              </div>
+
+              <p
+                style={{
+                  fontSize:
+                    "0.7rem",
+                  color:
+                    "#777",
+                    marginTop:
+                      "8px",
+                }}
               >
+                Free local
+                hairstyle
+                effects. Realistic
+                AI hair replacement
+                is not performed.
+              </p>
+            </div>
 
-                <input
-                  type="text"
-                  value={
-                    aiInstruction
-                  }
-                  onChange={(e) =>
-                    setAiInstruction(
-                      e.target.value
-                    )
-                  }
-                  placeholder='e.g., "background hata do aur HD kar do"'
-                  disabled={
-                    isProcessing ||
-                    !currentPath
-                  }
-                  className="ai-input"
-                />
+            {/* TEXT EDITOR */}
 
-                <button
-                  type="submit"
-                  className="ai-edit-btn"
-                  disabled={
-                    isProcessing ||
-                    !aiInstruction.trim() ||
-                    !currentPath
-                  }
-                >
-                  Apply
-                </button>
+            <div className="tool-section">
+              <h3>
+                Add / Change Text
+              </h3>
 
-              </form>
+              <input
+                type="text"
+                value={
+                  textValue
+                }
+                onChange={(
+                  event
+                ) =>
+                  setTextValue(
+                    event
+                      .target
+                      .value
+                  )
+                }
+                placeholder="New text..."
+                disabled={
+                  isProcessing
+                }
+                className="ai-input"
+              />
 
-              <div
+              <label
                 style={{
                   display:
-                    "flex",
-                  flexWrap:
-                    "wrap",
-                  gap: "6px",
+                    "block",
                   marginTop:
                     "10px",
                 }}
               >
+                Text color
+              </label>
 
-                {AI_SUGGESTIONS.map(
-                  (suggestion) => (
-                    <button
-                      key={
-                        suggestion
-                      }
-                      type="button"
-                      onClick={() =>
-                        setAiInstruction(
-                          suggestion
-                        )
-                      }
-                      disabled={
-                        isProcessing ||
-                        !currentPath
-                      }
-                      style={{
-                        fontSize:
-                          "0.7rem",
-                        padding:
-                          "4px 8px",
-                        borderRadius:
-                          "12px",
-                        border:
-                          "1px solid #d0ccff",
-                        background:
-                          "#f5f3ff",
-                        color:
-                          "#5a52d5",
-                        cursor:
-                          "pointer",
-                      }}
-                    >
-                      {suggestion}
-                    </button>
+              <input
+                type="color"
+                value={
+                  textColor
+                }
+                onChange={(
+                  event
+                ) =>
+                  setTextColor(
+                    event
+                      .target
+                      .value
                   )
-                )}
+                }
+                disabled={
+                  isProcessing
+                }
+              />
 
-              </div>
+              <label
+                style={{
+                  display:
+                    "block",
+                  marginTop:
+                    "10px",
+                }}
+              >
+                Background
+              </label>
 
+              <select
+                value={
+                  textBackground
+                }
+                onChange={(
+                  event
+                ) =>
+                  setTextBackground(
+                    event
+                      .target
+                      .value
+                  )
+                }
+                disabled={
+                  isProcessing
+                }
+              >
+                <option value="transparent">
+                  Transparent
+                </option>
+
+                <option value="#000000">
+                  Black
+                </option>
+
+                <option value="#ffffff">
+                  White
+                </option>
+
+                <option value="#ff0000">
+                  Red
+                </option>
+              </select>
+
+              <label
+                style={{
+                  display:
+                    "block",
+                  marginTop:
+                    "10px",
+                }}
+              >
+                Size
+              </label>
+
+              <input
+                type="range"
+                min="20"
+                max="120"
+                value={
+                  textSize
+                }
+                onChange={(
+                  event
+                ) =>
+                  setTextSize(
+                    Number(
+                      event
+                        .target
+                        .value
+                    )
+                  )
+                }
+                disabled={
+                  isProcessing
+                }
+              />
+
+              <label>
+                X:{" "}
+                {textX}%
+              </label>
+
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={
+                  textX
+                }
+                onChange={(
+                  event
+                ) =>
+                  setTextX(
+                    Number(
+                      event
+                        .target
+                        .value
+                    )
+                  )
+                }
+                disabled={
+                  isProcessing
+                }
+              />
+
+              <label>
+                Y:{" "}
+                {textY}%
+              </label>
+
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={
+                  textY
+                }
+                onChange={(
+                  event
+                ) =>
+                  setTextY(
+                    Number(
+                      event
+                        .target
+                        .value
+                    )
+                  )
+                }
+                disabled={
+                  isProcessing
+                }
+              />
+
+              <button
+                className="ai-edit-btn"
+                onClick={
+                  handleAddText
+                }
+                disabled={
+                  isProcessing ||
+                  !textValue.trim()
+                }
+                style={{
+                  marginTop:
+                    "10px",
+                }}
+              >
+                Add Text
+              </button>
+
+              <p
+                style={{
+                  fontSize:
+                    "0.7rem",
+                  color:
+                    "#777",
+                  marginTop:
+                    "8px",
+                }}
+              >
+                Text overlay
+                completely local
+                hai. Existing
+                text ko automatically
+                erase/reconstruct
+                karna AI ke bina
+                guaranteed nahi hai.
+              </p>
             </div>
 
-            {/* ==================================
-                RESET
-            ================================== */}
+            {/* RESET */}
 
             <button
               className="reset-btn"
@@ -1664,166 +2428,160 @@ function ImageEditor() {
                 handleReset
               }
               disabled={
-                isProcessing ||
-                !originalPath
+                isProcessing
               }
             >
-              🔄 Reset to Original
+              🔄 Reset
             </button>
 
+            {/* DOWNLOAD */}
+
+            <button
+              className="new-image-btn"
+              onClick={
+                handleDownload
+              }
+              disabled={
+                isProcessing ||
+                !currentCanvas
+              }
+              style={{
+                marginTop:
+                  "10px",
+              }}
+            >
+              ⬇ Download Edited
+            </button>
           </div>
 
-          {/* ==================================
-              RIGHT PREVIEW
-          ================================== */}
+          {/* PREVIEW */}
 
           <div className="editor-preview">
 
-            {/* =================================
-                ORIGINAL
-            ================================= */}
+            {/* ORIGINAL */}
 
             <div className="preview-section">
-
               <h3>
                 Original Image
               </h3>
 
               <div className="image-frame">
-
                 {originalUrl ? (
                   <img
-                    src={originalUrl}
+                    src={
+                      originalUrl
+                    }
                     alt="Original"
                     className="preview-image"
                   />
                 ) : (
                   <div className="no-image-placeholder">
-                    No image uploaded.
+                    No image.
                   </div>
                 )}
-
               </div>
 
               {metadata && (
                 <div className="image-info">
-
                   <span className="info-badge">
-                    {metadata.width} ×{" "}
-                    {metadata.height}
+                    {
+                      metadata.width
+                    }{" "}
+                    ×{" "}
+                    {
+                      metadata.height
+                    }
                   </span>
 
                   <span className="info-badge">
-                    {metadata.format ||
-                      "jpeg"}
+                    {
+                      metadata.format
+                    }
                   </span>
 
-                  {metadata.size && (
-                    <span className="info-badge">
-                      {formatFileSize(
+                  <span className="info-badge">
+                    {
+                      formatFileSize(
                         metadata.size
-                      )}
-                    </span>
-                  )}
-
+                      )
+                    }
+                  </span>
                 </div>
               )}
-
             </div>
 
-            {/* =================================
-                EDITED RESULT
-            ================================= */}
+            {/* EDITED */}
 
             <div className="preview-section">
-
               <h3>
+                Edited Result
 
-                {resultUrl
-                  ? "Edited Result"
-                  : "Preview"}
-
-                {downloadHref && (
-                  <a
-                    href={
-                      downloadHref
-                    }
-                    download
-                    className="download-link"
-                  >
-                    ⬇ Download
-                  </a>
-                )}
-
+                <button
+                  type="button"
+                  onClick={
+                    handleDownload
+                  }
+                  disabled={
+                    !currentCanvas
+                  }
+                  className="download-link"
+                  style={{
+                    border:
+                      "none",
+                    background:
+                      "transparent",
+                    cursor:
+                      "pointer",
+                    marginLeft:
+                      "15px",
+                  }}
+                >
+                  ⬇ Download
+                </button>
               </h3>
 
               <div className="image-frame">
-
-                {resultUrl && (
+                {currentPreviewUrl ? (
                   <img
-                    src={resultUrl}
+                    src={
+                      currentPreviewUrl
+                    }
                     alt="Edited"
                     className="preview-image"
-                    onError={() =>
-                      setResultLoadError(
-                        true
-                      )
-                    }
-                    onLoad={() =>
-                      setResultLoadError(
-                        false
-                      )
-                    }
-                    style={{
-                      display:
-                        resultLoadError
-                          ? "none"
-                          : "block",
-                    }}
                   />
-                )}
-
-                <div
-                  className="no-image-placeholder"
-                  style={{
-                    display:
-                      resultUrl &&
-                      !resultLoadError
-                        ? "none"
-                        : "flex",
-                  }}
-                >
-
-                  {resultUrl
-                    ? resultLoadError
-                      ? "Result image load nahi hui. Retry ya naya edit try karo."
-                      : "Loading result..."
-                    : "Apply a filter or adjustment to see the result"}
-
-                </div>
-
-              </div>
-
-              {resultUrl &&
-                !resultLoadError &&
-                metadata && (
-                  <div className="image-info">
-
-                    <span className="info-badge">
-                      {metadata.width} ×{" "}
-                      {metadata.height}
-                    </span>
-
+                ) : (
+                  <div className="no-image-placeholder">
+                    Apply an
+                    edit.
                   </div>
                 )}
+              </div>
 
+              {currentCanvas && (
+                <div className="image-info">
+                  <span className="info-badge">
+                    {
+                      currentCanvas.width
+                    }{" "}
+                    ×{" "}
+                    {
+                      currentCanvas.height
+                    }
+                  </span>
+
+                  <span className="info-badge">
+                    LOCAL
+                  </span>
+
+                  <span className="info-badge">
+                    API: 0
+                  </span>
+                </div>
+              )}
             </div>
-
           </div>
-
         </div>
       )}
-
     </div>
   );
 }
