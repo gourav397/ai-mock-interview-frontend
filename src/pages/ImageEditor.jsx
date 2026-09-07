@@ -1,33 +1,28 @@
 // ============================================================
-// FREE LOCAL IMAGE EDITOR
+// AI IMAGE EDITOR
 // ============================================================
-// NO AI API
-// NO IMAGE-EDITOR BACKEND API
-// NO CREDITS
+// FREE LOCAL FEATURES
+// ------------------------------------------------------------
+// • 50+ local filters
+// • Brightness / Contrast / Saturation
+// • Background Blur
+// • 8 Free Hairstyles
+// • Undo
+// • Redo
+// • Reset
+// • Text overlay
+// • Download
+// • Drag & Drop
 //
-// Features:
-// - Local image upload
-// - Local filters
-// - Brightness
-// - Contrast
-// - Saturation
-// - Warm / Cool
-// - Vintage
-// - B&W
-// - Cinematic
-// - Portrait
-// - Soft
-// - Vivid
-// - Dramatic
-// - Face Glow approximation
-// - Portrait Enhance
-// - Background Blur
-// - Local hairstyle overlays
-// - Undo
-// - Redo
-// - Reset
-// - Download
-// - Local text overlay
+// AI FEATURES PRESERVED
+// ------------------------------------------------------------
+// • AI Edit
+// • Backend AI processing
+//
+// IMPORTANT
+// ------------------------------------------------------------
+// Hairstyles shown here are FREE browser-local overlays.
+// They do NOT consume AI credits.
 // ============================================================
 
 import React, {
@@ -37,30 +32,563 @@ import React, {
   useState,
 } from "react";
 
+import apiService from "../../services/api";
 import "./ImageEditor.css";
 
 // ============================================================
-// FILTERS
+// 50+ FILTERS
 // ============================================================
 
 const FILTERS = [
-  { id: "natural", label: "Natural", icon: "🌿" },
-  { id: "brighten", label: "Brighten", icon: "☀️" },
-  { id: "darken", label: "Darken", icon: "🌙" },
-  { id: "contrast", label: "Contrast", icon: "◐" },
-  { id: "saturate", label: "Saturate", icon: "🎨" },
-  { id: "desaturate", label: "Desaturate", icon: "🖌️" },
-  { id: "warm", label: "Warm", icon: "🔥" },
-  { id: "cool", label: "Cool", icon: "❄️" },
-  { id: "vintage", label: "Vintage", icon: "📷" },
-  { id: "bw", label: "B&W", icon: "⚫" },
-  { id: "cinematic", label: "Cinematic", icon: "🎬" },
-  { id: "portrait", label: "Portrait", icon: "👤" },
-  { id: "soft", label: "Soft", icon: "💫" },
-  { id: "vivid", label: "Vivid", icon: "🌈" },
-  { id: "dramatic", label: "Dramatic", icon: "🎭" },
-  { id: "face-glow", label: "Face Glow", icon: "✨" },
-  { id: "portrait-enhance", label: "Portrait Enhance", icon: "💎" },
+  {
+    id: "natural",
+    label: "Natural",
+    icon: "🌿",
+    b: 1,
+    c: 1,
+    s: 1,
+  },
+  {
+    id: "brighten",
+    label: "Brighten",
+    icon: "☀️",
+    b: 1.3,
+    c: 1.05,
+    s: 1.05,
+  },
+  {
+    id: "darken",
+    label: "Darken",
+    icon: "🌙",
+    b: 0.7,
+    c: 1.05,
+    s: 1,
+  },
+  {
+    id: "contrast",
+    label: "Contrast",
+    icon: "◐",
+    b: 1,
+    c: 1.45,
+    s: 1,
+  },
+  {
+    id: "saturate",
+    label: "Saturate",
+    icon: "🎨",
+    b: 1,
+    c: 1.05,
+    s: 1.7,
+  },
+  {
+    id: "desaturate",
+    label: "Desaturate",
+    icon: "🖌️",
+    b: 1,
+    c: 1,
+    s: 0.35,
+  },
+  {
+    id: "warm",
+    label: "Warm",
+    icon: "🔥",
+    b: 1.08,
+    c: 1.05,
+    s: 1.15,
+  },
+  {
+    id: "cool",
+    label: "Cool",
+    icon: "❄️",
+    b: 0.98,
+    c: 1.05,
+    s: 1.05,
+  },
+  {
+    id: "vintage",
+    label: "Vintage",
+    icon: "📷",
+    b: 1.05,
+    c: 0.9,
+    s: 0.75,
+  },
+  {
+    id: "bw",
+    label: "B&W",
+    icon: "⚫",
+    b: 1.02,
+    c: 1.15,
+    s: 0,
+  },
+  {
+    id: "cinematic",
+    label: "Cinematic",
+    icon: "🎬",
+    b: 0.95,
+    c: 1.3,
+    s: 0.85,
+  },
+  {
+    id: "portrait",
+    label: "Portrait",
+    icon: "👤",
+    b: 1.08,
+    c: 1.08,
+    s: 1.08,
+  },
+  {
+    id: "soft",
+    label: "Soft",
+    icon: "💫",
+    b: 1.08,
+    c: 0.85,
+    s: 0.95,
+  },
+  {
+    id: "vivid",
+    label: "Vivid",
+    icon: "🌈",
+    b: 1.05,
+    c: 1.2,
+    s: 1.55,
+  },
+  {
+    id: "dramatic",
+    label: "Dramatic",
+    icon: "🎭",
+    b: 0.9,
+    c: 1.55,
+    s: 1.1,
+  },
+  {
+    id: "face-glow",
+    label: "Face Glow",
+    icon: "✨",
+    b: 1.15,
+    c: 0.95,
+    s: 1.08,
+  },
+  {
+    id: "portrait-enhance",
+    label: "Portrait+",
+    icon: "💎",
+    b: 1.08,
+    c: 1.18,
+    s: 1.15,
+  },
+
+  // ----------------------------------------------------------
+  // EXTRA FILTERS
+  // ----------------------------------------------------------
+
+  {
+    id: "sunset",
+    label: "Sunset",
+    icon: "🌅",
+    b: 1.08,
+    c: 1.12,
+    s: 1.3,
+  },
+  {
+    id: "golden",
+    label: "Golden",
+    icon: "🌟",
+    b: 1.12,
+    c: 1.08,
+    s: 1.2,
+  },
+  {
+    id: "rose",
+    label: "Rose",
+    icon: "🌹",
+    b: 1.05,
+    c: 1.05,
+    s: 1.12,
+  },
+  {
+    id: "peach",
+    label: "Peach",
+    icon: "🍑",
+    b: 1.08,
+    c: 0.98,
+    s: 1.15,
+  },
+  {
+    id: "lavender",
+    label: "Lavender",
+    icon: "💜",
+    b: 1.04,
+    c: 1,
+    s: 1.08,
+  },
+  {
+    id: "ocean",
+    label: "Ocean",
+    icon: "🌊",
+    b: 1,
+    c: 1.12,
+    s: 1.1,
+  },
+  {
+    id: "forest",
+    label: "Forest",
+    icon: "🌲",
+    b: 0.98,
+    c: 1.18,
+    s: 1.05,
+  },
+  {
+    id: "moody",
+    label: "Moody",
+    icon: "🌑",
+    b: 0.82,
+    c: 1.35,
+    s: 0.9,
+  },
+  {
+    id: "matte",
+    label: "Matte",
+    icon: "🩶",
+    b: 1.02,
+    c: 0.82,
+    s: 0.82,
+  },
+  {
+    id: "fade",
+    label: "Fade",
+    icon: "🌫️",
+    b: 1.08,
+    c: 0.78,
+    s: 0.88,
+  },
+  {
+    id: "film",
+    label: "Film",
+    icon: "🎞️",
+    b: 1.02,
+    c: 1.12,
+    s: 0.9,
+  },
+  {
+    id: "retro",
+    label: "Retro",
+    icon: "📻",
+    b: 1.06,
+    c: 0.92,
+    s: 0.78,
+  },
+  {
+    id: "noir",
+    label: "Noir",
+    icon: "🕵️",
+    b: 0.82,
+    c: 1.5,
+    s: 0,
+  },
+  {
+    id: "high-key",
+    label: "High Key",
+    icon: "💡",
+    b: 1.35,
+    c: 0.9,
+    s: 1.05,
+  },
+  {
+    id: "low-key",
+    label: "Low Key",
+    icon: "🖤",
+    b: 0.65,
+    c: 1.35,
+    s: 0.95,
+  },
+  {
+    id: "clear",
+    label: "Clear",
+    icon: "🔆",
+    b: 1.12,
+    c: 1.15,
+    s: 1.05,
+  },
+  {
+    id: "crisp",
+    label: "Crisp",
+    icon: "💠",
+    b: 1.02,
+    c: 1.25,
+    s: 1.08,
+  },
+  {
+    id: "fresh",
+    label: "Fresh",
+    icon: "🍃",
+    b: 1.12,
+    c: 1.05,
+    s: 1.15,
+  },
+  {
+    id: "clean",
+    label: "Clean",
+    icon: "✨",
+    b: 1.08,
+    c: 1.12,
+    s: 1,
+  },
+  {
+    id: "bright-pop",
+    label: "Bright Pop",
+    icon: "🌞",
+    b: 1.22,
+    c: 1.16,
+    s: 1.3,
+  },
+  {
+    id: "deep",
+    label: "Deep",
+    icon: "🌌",
+    b: 0.78,
+    c: 1.4,
+    s: 1.05,
+  },
+  {
+    id: "ultra-vivid",
+    label: "Ultra Vivid",
+    icon: "🌈",
+    b: 1.08,
+    c: 1.3,
+    s: 1.85,
+  },
+  {
+    id: "pastel",
+    label: "Pastel",
+    icon: "🩷",
+    b: 1.1,
+    c: 0.82,
+    s: 0.82,
+  },
+  {
+    id: "dream",
+    label: "Dream",
+    icon: "💭",
+    b: 1.12,
+    c: 0.8,
+    s: 0.92,
+  },
+  {
+    id: "glow",
+    label: "Glow",
+    icon: "🌟",
+    b: 1.2,
+    c: 0.95,
+    s: 1.12,
+  },
+  {
+    id: "sunny",
+    label: "Sunny",
+    icon: "🌤️",
+    b: 1.25,
+    c: 1.02,
+    s: 1.15,
+  },
+  {
+    id: "cloudy",
+    label: "Cloudy",
+    icon: "☁️",
+    b: 0.95,
+    c: 0.92,
+    s: 0.88,
+  },
+  {
+    id: "arctic",
+    label: "Arctic",
+    icon: "🧊",
+    b: 1.02,
+    c: 1.08,
+    s: 0.95,
+  },
+  {
+    id: "tropical",
+    label: "Tropical",
+    icon: "🌴",
+    b: 1.12,
+    c: 1.12,
+    s: 1.4,
+  },
+  {
+    id: "chocolate",
+    label: "Chocolate",
+    icon: "🍫",
+    b: 0.95,
+    c: 1.05,
+    s: 0.8,
+  },
+  {
+    id: "coffee",
+    label: "Coffee",
+    icon: "☕",
+    b: 0.94,
+    c: 1.08,
+    s: 0.82,
+  },
+  {
+    id: "amber",
+    label: "Amber",
+    icon: "🟠",
+    b: 1.08,
+    c: 1.05,
+    s: 1.18,
+  },
+  {
+    id: "ruby",
+    label: "Ruby",
+    icon: "🔴",
+    b: 0.98,
+    c: 1.15,
+    s: 1.25,
+  },
+  {
+    id: "sapphire",
+    label: "Sapphire",
+    icon: "🔵",
+    b: 0.98,
+    c: 1.15,
+    s: 1.15,
+  },
+  {
+    id: "emerald",
+    label: "Emerald",
+    icon: "🟢",
+    b: 1,
+    c: 1.12,
+    s: 1.18,
+  },
+  {
+    id: "magenta",
+    label: "Magenta",
+    icon: "🟣",
+    b: 1.02,
+    c: 1.08,
+    s: 1.18,
+  },
+  {
+    id: "teal",
+    label: "Teal",
+    icon: "🔷",
+    b: 1,
+    c: 1.12,
+    s: 1.08,
+  },
+  {
+    id: "indie",
+    label: "Indie",
+    icon: "🎸",
+    b: 0.96,
+    c: 1.18,
+    s: 0.88,
+  },
+  {
+    id: "street",
+    label: "Street",
+    icon: "🏙️",
+    b: 0.92,
+    c: 1.3,
+    s: 1.12,
+  },
+  {
+    id: "fashion",
+    label: "Fashion",
+    icon: "👗",
+    b: 1.08,
+    c: 1.22,
+    s: 1.2,
+  },
+  {
+    id: "studio",
+    label: "Studio",
+    icon: "📸",
+    b: 1.15,
+    c: 1.15,
+    s: 1.05,
+  },
+  {
+    id: "professional",
+    label: "Professional",
+    icon: "💼",
+    b: 1.06,
+    c: 1.15,
+    s: 1,
+  },
+  {
+    id: "social",
+    label: "Social",
+    icon: "📱",
+    b: 1.12,
+    c: 1.2,
+    s: 1.25,
+  },
+  {
+    id: "travel",
+    label: "Travel",
+    icon: "✈️",
+    b: 1.08,
+    c: 1.12,
+    s: 1.18,
+  },
+  {
+    id: "food",
+    label: "Food",
+    icon: "🍕",
+    b: 1.08,
+    c: 1.12,
+    s: 1.35,
+  },
+  {
+    id: "night",
+    label: "Night",
+    icon: "🌃",
+    b: 0.72,
+    c: 1.38,
+    s: 1.02,
+  },
+  {
+    id: "sunrise",
+    label: "Sunrise",
+    icon: "🌄",
+    b: 1.18,
+    c: 1.08,
+    s: 1.18,
+  },
+  {
+    id: "autumn",
+    label: "Autumn",
+    icon: "🍂",
+    b: 1.02,
+    c: 1.05,
+    s: 1.12,
+  },
+  {
+    id: "spring",
+    label: "Spring",
+    icon: "🌸",
+    b: 1.12,
+    c: 1,
+    s: 1.15,
+  },
+  {
+    id: "winter",
+    label: "Winter",
+    icon: "❄️",
+    b: 1.05,
+    c: 1.08,
+    s: 0.9,
+  },
+  {
+    id: "summer",
+    label: "Summer",
+    icon: "🏖️",
+    b: 1.18,
+    c: 1.08,
+    s: 1.25,
+  },
 ];
 
 // ============================================================
@@ -68,41 +596,112 @@ const FILTERS = [
 // ============================================================
 
 const QUICK_ACTIONS = [
-  { id: "enhance", label: "Enhance", icon: "✨" },
-  { id: "upscale", label: "2x Upscale", icon: "🔍" },
-  { id: "bw", label: "B&W", icon: "⚫" },
-  { id: "warm", label: "Warm", icon: "🔥" },
-  { id: "vintage", label: "Vintage", icon: "📷" },
+  {
+    id: "enhance",
+    label: "Enhance",
+    icon: "✨",
+  },
+  {
+    id: "upscale",
+    label: "2x Upscale",
+    icon: "🔍",
+  },
+  {
+    id: "bw",
+    label: "B&W",
+    icon: "⚫",
+  },
+  {
+    id: "warm",
+    label: "Warm",
+    icon: "🔥",
+  },
+  {
+    id: "vintage",
+    label: "Vintage",
+    icon: "📷",
+  },
+  {
+    id: "clear",
+    label: "Clear",
+    icon: "💎",
+  },
 ];
 
 // ============================================================
-// HAIRSTYLES
-// ============================================================
-// IMPORTANT:
-// These are LOCAL visual overlays.
-// NO AI API is called.
-//
-// They are not real AI hair replacement.
-// They provide free browser-based hairstyle previews.
+// 8 FREE HAIRSTYLES
 // ============================================================
 
 const HAIRSTYLES = [
-  { id: "original", label: "Original", icon: "🧑" },
-  { id: "short-hair", label: "Short Hair", icon: "💈" },
-  { id: "side-part", label: "Side Part", icon: "💇" },
-  { id: "classic", label: "Classic", icon: "🎩" },
-  { id: "crew-cut", label: "Crew Cut", icon: "✂️" },
-  { id: "textured", label: "Textured", icon: "🌾" },
-  { id: "wavy", label: "Wavy", icon: "🌊" },
-  { id: "curly", label: "Curly", icon: "🌀" },
-  { id: "slick-back", label: "Slick Back", icon: "💼" },
-  { id: "undercut", label: "Undercut", icon: "🪒" },
-  { id: "fade", label: "Fade", icon: "🕶️" },
-  { id: "fringe", label: "Fringe", icon: "💇" },
-  { id: "buzz-cut", label: "Buzz Cut", icon: "🦲" },
-  { id: "long-hair", label: "Long Hair", icon: "💁" },
-  { id: "messy", label: "Messy Style", icon: "🌪️" },
+  {
+    id: "original",
+    label: "Original",
+    icon: "🧑",
+  },
+  {
+    id: "short-hair",
+    label: "Short Hair",
+    icon: "💈",
+  },
+  {
+    id: "side-part",
+    label: "Side Part",
+    icon: "💇",
+  },
+  {
+    id: "classic",
+    label: "Classic",
+    icon: "🎩",
+  },
+  {
+    id: "crew-cut",
+    label: "Crew Cut",
+    icon: "✂️",
+  },
+  {
+    id: "textured",
+    label: "Textured",
+    icon: "🌾",
+  },
+  {
+    id: "wavy",
+    label: "Wavy",
+    icon: "🌊",
+  },
+  {
+    id: "curly",
+    label: "Curly",
+    icon: "🌀",
+  },
 ];
+
+// ============================================================
+// INITIAL STATE
+// ============================================================
+
+const DEFAULT_ADJUSTMENTS = {
+  brightness: 1,
+  contrast: 1,
+  saturation: 1,
+};
+
+const createEditorState = () => ({
+  activeFilter: "natural",
+
+  adjustments: {
+    ...DEFAULT_ADJUSTMENTS,
+  },
+
+  blurIntensity: "none",
+
+  selectedHairstyle: "original",
+
+  text: "",
+  textColor: "#ffffff",
+  textSize: 32,
+  textX: 50,
+  textY: 50,
+});
 
 // ============================================================
 // COMPONENT
@@ -112,266 +711,66 @@ export default function ImageEditor() {
   const canvasRef = useRef(null);
   const imageRef = useRef(null);
   const fileInputRef = useRef(null);
-
   const objectUrlRef = useRef(null);
 
-  // ==========================================================
+  // ----------------------------------------------------------
   // IMAGE
-  // ==========================================================
+  // ----------------------------------------------------------
 
-  const [originalUrl, setOriginalUrl] = useState(null);
-  const [imageLoaded, setImageLoaded] = useState(false);
+  const [originalUrl, setOriginalUrl] =
+    useState(null);
 
-  const [metadata, setMetadata] = useState(null);
+  const [imageLoaded, setImageLoaded] =
+    useState(false);
 
-  // ==========================================================
-  // EDIT STATE
-  // ==========================================================
+  const [metadata, setMetadata] =
+    useState(null);
 
-  const [activeFilter, setActiveFilter] = useState("natural");
+  // ----------------------------------------------------------
+  // EDITOR STATE
+  // ----------------------------------------------------------
 
-  const [adjustments, setAdjustments] = useState({
-    brightness: 1,
-    contrast: 1,
-    saturation: 1,
-  });
+  const [editorState, setEditorState] =
+    useState(createEditorState);
 
-  const [blurIntensity, setBlurIntensity] = useState("medium");
-
-  const [selectedHairstyle, setSelectedHairstyle] =
-    useState("original");
-
-  // ==========================================================
-  // TEXT TOOL
-  // ==========================================================
-
-  const [text, setText] = useState("");
-  const [textColor, setTextColor] = useState("#ffffff");
-  const [textSize, setTextSize] = useState(32);
-  const [textX, setTextX] = useState(50);
-  const [textY, setTextY] = useState(50);
-
-  // ==========================================================
+  // ----------------------------------------------------------
   // HISTORY
-  // ==========================================================
+  // ----------------------------------------------------------
 
-  const [history, setHistory] = useState([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [history, setHistory] =
+    useState([]);
 
-  // ==========================================================
+  const [future, setFuture] =
+    useState([]);
+
+  // ----------------------------------------------------------
   // UI
-  // ==========================================================
+  // ----------------------------------------------------------
 
-  const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+  const [errorMessage, setErrorMessage] =
+    useState("");
 
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [successMessage, setSuccessMessage] =
+    useState("");
 
-  // ==========================================================
-  // FILTER VALUES
-  // ==========================================================
+  const [isProcessing, setIsProcessing] =
+    useState(false);
 
-  const getFilterValues = useCallback((filterId) => {
-    switch (filterId) {
-      case "brighten":
-        return {
-          brightness: 1.3,
-          contrast: 1.05,
-          saturation: 1.05,
-        };
+  // ----------------------------------------------------------
+  // AI EDIT
+  // ----------------------------------------------------------
 
-      case "darken":
-        return {
-          brightness: 0.7,
-          contrast: 1.05,
-          saturation: 1,
-        };
+  const [aiInstruction, setAiInstruction] =
+    useState("");
 
-      case "contrast":
-        return {
-          brightness: 1,
-          contrast: 1.45,
-          saturation: 1,
-        };
-
-      case "saturate":
-        return {
-          brightness: 1,
-          contrast: 1.05,
-          saturation: 1.7,
-        };
-
-      case "desaturate":
-        return {
-          brightness: 1,
-          contrast: 1,
-          saturation: 0.35,
-        };
-
-      case "warm":
-        return {
-          brightness: 1.08,
-          contrast: 1.05,
-          saturation: 1.15,
-        };
-
-      case "cool":
-        return {
-          brightness: 0.98,
-          contrast: 1.05,
-          saturation: 1.05,
-        };
-
-      case "vintage":
-        return {
-          brightness: 1.05,
-          contrast: 0.9,
-          saturation: 0.75,
-        };
-
-      case "bw":
-        return {
-          brightness: 1.02,
-          contrast: 1.15,
-          saturation: 0,
-        };
-
-      case "cinematic":
-        return {
-          brightness: 0.95,
-          contrast: 1.3,
-          saturation: 0.85,
-        };
-
-      case "portrait":
-        return {
-          brightness: 1.08,
-          contrast: 1.08,
-          saturation: 1.08,
-        };
-
-      case "soft":
-        return {
-          brightness: 1.08,
-          contrast: 0.85,
-          saturation: 0.95,
-        };
-
-      case "vivid":
-        return {
-          brightness: 1.05,
-          contrast: 1.2,
-          saturation: 1.55,
-        };
-
-      case "dramatic":
-        return {
-          brightness: 0.9,
-          contrast: 1.55,
-          saturation: 1.1,
-        };
-
-      case "face-glow":
-        return {
-          brightness: 1.15,
-          contrast: 0.95,
-          saturation: 1.08,
-        };
-
-      case "portrait-enhance":
-        return {
-          brightness: 1.08,
-          contrast: 1.18,
-          saturation: 1.15,
-        };
-
-      case "natural":
-      default:
-        return {
-          brightness: 1,
-          contrast: 1,
-          saturation: 1,
-        };
-    }
-  }, []);
+  const [aiResultUrl, setAiResultUrl] =
+    useState(null);
 
   // ==========================================================
-  // CANVAS FILTER
+  // DESTRUCTURE STATE
   // ==========================================================
 
-  const getCanvasFilter = useCallback(() => {
-    const b = adjustments.brightness;
-    const c = adjustments.contrast;
-    const s = adjustments.saturation;
-
-    let filter = `
-      brightness(${b})
-      contrast(${c})
-      saturate(${s})
-    `;
-
-    if (activeFilter === "warm") {
-      filter += " sepia(0.12)";
-    }
-
-    if (activeFilter === "cool") {
-      filter += " hue-rotate(12deg)";
-    }
-
-    if (activeFilter === "vintage") {
-      filter += " sepia(0.28)";
-    }
-
-    if (activeFilter === "cinematic") {
-      filter += " saturate(0.9)";
-    }
-
-    if (activeFilter === "soft") {
-      filter += " opacity(0.97)";
-    }
-
-    return filter;
-  }, [adjustments, activeFilter]);
-
-  // ==========================================================
-  // SAVE HISTORY
-  // ==========================================================
-
-  const saveHistory = useCallback(() => {
-    const canvas = canvasRef.current;
-
-    if (!canvas) return;
-
-    const snapshot = {
-      image: canvas.toDataURL("image/png"),
-      activeFilter,
-      adjustments: { ...adjustments },
-      blurIntensity,
-      selectedHairstyle,
-      text,
-      textColor,
-      textSize,
-      textX,
-      textY,
-    };
-
-    setHistory((prev) => {
-      const next = prev.slice(0, historyIndex + 1);
-      next.push(snapshot);
-
-      // Keep memory under control
-      if (next.length > 30) {
-        next.shift();
-      }
-
-      return next;
-    });
-
-    setHistoryIndex((prev) => {
-      const next = prev + 1;
-      return Math.min(next, 29);
-    });
-  }, [
+  const {
     activeFilter,
     adjustments,
     blurIntensity,
@@ -381,8 +780,210 @@ export default function ImageEditor() {
     textSize,
     textX,
     textY,
-    historyIndex,
+  } = editorState;
+
+  // ==========================================================
+  // UPDATE STATE
+  // ==========================================================
+
+  const updateEditor = useCallback(
+    (changes) => {
+      setEditorState((prev) => ({
+        ...prev,
+        ...changes,
+      }));
+    },
+    []
+  );
+
+  // ==========================================================
+  // SNAPSHOT
+  // ==========================================================
+
+  const getSnapshot = useCallback(
+    () => ({
+      ...editorState,
+
+      adjustments: {
+        ...editorState.adjustments,
+      },
+    }),
+    [editorState]
+  );
+
+  // ==========================================================
+  // HISTORY
+  // ==========================================================
+
+  const pushHistory = useCallback(() => {
+    const snapshot = getSnapshot();
+
+    setHistory((prev) => [
+      ...prev,
+      snapshot,
+    ]);
+
+    setFuture([]);
+  }, [getSnapshot]);
+
+  // ==========================================================
+  // UNDO
+  // ==========================================================
+
+  const undo = useCallback(() => {
+    if (history.length === 0) {
+      return;
+    }
+
+    const previous =
+      history[history.length - 1];
+
+    setFuture((prev) => [
+      ...prev,
+      getSnapshot(),
+    ]);
+
+    setHistory((prev) =>
+      prev.slice(0, -1)
+    );
+
+    setEditorState({
+      ...previous,
+      adjustments: {
+        ...previous.adjustments,
+      },
+    });
+
+    setSuccessMessage(
+      "↩️ One step back."
+    );
+  }, [
+    history,
+    getSnapshot,
   ]);
+
+  // ==========================================================
+  // REDO
+  // ==========================================================
+
+  const redo = useCallback(() => {
+    if (future.length === 0) {
+      return;
+    }
+
+    const next =
+      future[future.length - 1];
+
+    setHistory((prev) => [
+      ...prev,
+      getSnapshot(),
+    ]);
+
+    setFuture((prev) =>
+      prev.slice(0, -1)
+    );
+
+    setEditorState({
+      ...next,
+      adjustments: {
+        ...next.adjustments,
+      },
+    });
+
+    setSuccessMessage(
+      "↪️ Redone."
+    );
+  }, [
+    future,
+    getSnapshot,
+  ]);
+
+  // ==========================================================
+  // FILTER LOOKUP
+  // ==========================================================
+
+  const getFilterById = useCallback(
+    (id) => {
+      return (
+        FILTERS.find(
+          (filter) => filter.id === id
+        ) || FILTERS[0]
+      );
+    },
+    []
+  );
+
+  // ==========================================================
+  // CANVAS FILTER
+  // ==========================================================
+
+  const getCanvasFilter =
+    useCallback(() => {
+      const b =
+        adjustments.brightness;
+
+      const c =
+        adjustments.contrast;
+
+      const s =
+        adjustments.saturation;
+
+      let filter = `
+        brightness(${b})
+        contrast(${c})
+        saturate(${s})
+      `;
+
+      switch (activeFilter) {
+        case "warm":
+        case "sunset":
+        case "golden":
+        case "rose":
+        case "peach":
+        case "amber":
+        case "autumn":
+        case "summer":
+          filter += " sepia(0.12)";
+          break;
+
+        case "cool":
+        case "ocean":
+        case "arctic":
+        case "winter":
+        case "sapphire":
+        case "teal":
+          filter += " hue-rotate(10deg)";
+          break;
+
+        case "vintage":
+        case "retro":
+        case "film":
+        case "coffee":
+        case "chocolate":
+          filter += " sepia(0.25)";
+          break;
+
+        case "soft":
+        case "dream":
+        case "pastel":
+          filter +=
+            " brightness(1.02) opacity(0.98)";
+          break;
+
+        case "face-glow":
+        case "glow":
+          filter += " brightness(1.04)";
+          break;
+
+        default:
+          break;
+      }
+
+      return filter;
+    }, [
+      adjustments,
+      activeFilter,
+    ]);
 
   // ==========================================================
   // DRAW TEXT
@@ -390,485 +991,466 @@ export default function ImageEditor() {
 
   const drawText = useCallback(
     (ctx, canvas) => {
-      if (!text.trim()) return;
+      if (!text.trim()) {
+        return;
+      }
 
-      const x = (canvas.width * textX) / 100;
-      const y = (canvas.height * textY) / 100;
+      const x =
+        (canvas.width * textX) / 100;
+
+      const y =
+        (canvas.height * textY) / 100;
 
       ctx.save();
 
-      ctx.font = `700 ${textSize}px Arial`;
+      ctx.font =
+        `700 ${textSize}px Arial`;
+
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
 
-      // shadow
-      ctx.shadowColor = "rgba(0,0,0,0.65)";
+      ctx.shadowColor =
+        "rgba(0,0,0,0.65)";
+
       ctx.shadowBlur = 5;
       ctx.shadowOffsetX = 2;
       ctx.shadowOffsetY = 2;
 
       ctx.fillStyle = textColor;
 
-      ctx.fillText(text, x, y);
+      ctx.fillText(
+        text,
+        x,
+        y
+      );
 
       ctx.restore();
     },
-    [text, textColor, textSize, textX, textY]
+    [
+      text,
+      textColor,
+      textSize,
+      textX,
+      textY,
+    ]
   );
 
   // ==========================================================
-  // DRAW HAIRSTYLE
+  // FACE / HEAD ANCHOR
+  // ==========================================================
+  // Browser-only approximation.
+  //
+  // This calculates a head region from image proportions so
+  // hairstyle overlays stay aligned across portrait images.
+  // It does NOT call an AI API.
   // ==========================================================
 
-  const drawHairstyle = useCallback(
-    (ctx, canvas, style) => {
-      if (!style || style === "original") return;
-
+  const getHeadAnchor =
+    useCallback((canvas) => {
       const w = canvas.width;
       const h = canvas.height;
 
-      // Approximate head area.
-      // This is intentionally local and does not use AI.
-      const cx = w / 2;
-      const cy = h * 0.22;
+      const portrait =
+        h >= w * 1.05;
 
-      const headW = Math.min(w * 0.32, 180);
-      const headH = headW * 0.65;
+      if (portrait) {
+        return {
+          cx: w * 0.5,
+          cy: h * 0.235,
+          headW: w * 0.29,
+          headH: h * 0.13,
+        };
+      }
 
-      ctx.save();
+      return {
+        cx: w * 0.5,
+        cy: h * 0.27,
+        headW: w * 0.22,
+        headH: h * 0.11,
+      };
+    }, []);
 
-      // Hair base
-      ctx.beginPath();
+  // ==========================================================
+  // HAIRSTYLE DRAWING
+  // ==========================================================
 
-      switch (style) {
-        case "short-hair":
+  const drawHairstyle =
+    useCallback(
+      (
+        ctx,
+        canvas,
+        style
+      ) => {
+        if (
+          !style ||
+          style === "original"
+        ) {
+          return;
+        }
+
+        const {
+          cx,
+          cy,
+          headW,
+          headH,
+        } = getHeadAnchor(canvas);
+
+        ctx.save();
+
+        ctx.fillStyle =
+          "rgba(30, 22, 18, 0.94)";
+
+        ctx.strokeStyle =
+          "rgba(10,10,10,0.85)";
+
+        ctx.lineWidth =
+          Math.max(
+            1.5,
+            canvas.width / 500
+          );
+
+        // ----------------------------------------------------
+        // Helper: top hair cap
+        // ----------------------------------------------------
+
+        const hairCap = (
+          widthScale = 1,
+          heightScale = 1
+        ) => {
+          ctx.beginPath();
+
           ctx.ellipse(
             cx,
             cy,
-            headW,
-            headH,
-            0,
-            Math.PI,
-            Math.PI * 2
-          );
-          break;
-
-        case "side-part":
-          ctx.ellipse(
-            cx,
-            cy,
-            headW * 1.05,
-            headH * 0.9,
+            headW * widthScale,
+            headH * heightScale,
             0,
             Math.PI,
             Math.PI * 2
           );
 
-          ctx.moveTo(cx, cy - headH * 0.9);
-          ctx.lineTo(cx + headW * 0.65, cy - headH * 0.1);
-          break;
+          ctx.fill();
+          ctx.stroke();
+        };
 
-        case "classic":
-          ctx.ellipse(
-            cx,
-            cy - 5,
-            headW * 1.08,
-            headH,
-            0,
-            Math.PI,
-            Math.PI * 2
-          );
-          break;
+        // ----------------------------------------------------
+        // Helper: hair strands
+        // ----------------------------------------------------
 
-        case "crew-cut":
-          ctx.ellipse(
-            cx,
-            cy + 10,
-            headW * 0.92,
-            headH * 0.75,
-            0,
-            Math.PI,
-            Math.PI * 2
-          );
-          break;
+        const strands = (
+          count = 7,
+          length = 1
+        ) => {
+          ctx.beginPath();
 
-        case "textured":
-          ctx.ellipse(
-            cx,
-            cy,
-            headW * 1.08,
-            headH * 1.1,
-            0,
-            Math.PI,
-            Math.PI * 2
-          );
+          for (
+            let i = 0;
+            i < count;
+            i++
+          ) {
+            const t =
+              count === 1
+                ? 0.5
+                : i / (count - 1);
 
-          for (let i = -5; i <= 5; i++) {
-            ctx.moveTo(cx + i * 18, cy - headH);
+            const x =
+              cx -
+              headW +
+              t *
+                headW *
+                2;
+
+            ctx.moveTo(
+              x,
+              cy - headH * 0.75
+            );
+
             ctx.lineTo(
-              cx + i * 25,
-              cy - headH * 1.35
+              x +
+                (i % 2 === 0
+                  ? -headW * 0.05
+                  : headW * 0.05),
+              cy -
+                headH *
+                  (1.15 + length)
             );
           }
-          break;
 
-        case "wavy":
-          ctx.ellipse(
-            cx,
-            cy,
-            headW * 1.12,
-            headH * 1.15,
-            0,
-            Math.PI,
-            Math.PI * 2
-          );
+          ctx.stroke();
+        };
 
-          for (let i = -4; i <= 4; i++) {
+        switch (style) {
+          // --------------------------------------------------
+          // SHORT
+          // --------------------------------------------------
+
+          case "short-hair":
+            hairCap(
+              1.0,
+              1.0
+            );
+            break;
+
+          // --------------------------------------------------
+          // SIDE PART
+          // --------------------------------------------------
+
+          case "side-part":
+            hairCap(
+              1.08,
+              1.0
+            );
+
+            ctx.beginPath();
+
             ctx.moveTo(
-              cx + i * 22,
-              cy - headH * 0.7
+              cx -
+                headW * 0.05,
+              cy -
+                headH * 1.0
             );
 
             ctx.quadraticCurveTo(
-              cx + i * 22 + 10,
-              cy - headH * 1.2,
-              cx + i * 22 + 20,
-              cy - headH * 0.7
+              cx +
+                headW * 0.25,
+              cy -
+                headH * 0.55,
+              cx +
+                headW * 0.82,
+              cy -
+                headH * 0.45
             );
-          }
-          break;
 
-        case "curly":
-          ctx.ellipse(
-            cx,
-            cy,
-            headW * 1.15,
-            headH * 1.2,
-            0,
-            Math.PI,
-            Math.PI * 2
-          );
+            ctx.stroke();
 
-          for (let i = -4; i <= 4; i++) {
-            for (let j = 0; j < 2; j++) {
-              ctx.beginPath();
-              ctx.arc(
-                cx + i * 25,
-                cy - headH * 0.8 + j * 22,
-                13,
-                0,
-                Math.PI * 2
+            break;
+
+          // --------------------------------------------------
+          // CLASSIC
+          // --------------------------------------------------
+
+          case "classic":
+            hairCap(
+              1.1,
+              1.12
+            );
+
+            strands(
+              8,
+              0.1
+            );
+
+            break;
+
+          // --------------------------------------------------
+          // CREW CUT
+          // --------------------------------------------------
+
+          case "crew-cut":
+            hairCap(
+              0.88,
+              0.72
+            );
+
+            break;
+
+          // --------------------------------------------------
+          // TEXTURED
+          // --------------------------------------------------
+
+          case "textured":
+            hairCap(
+              1.08,
+              1.12
+            );
+
+            strands(
+              9,
+              0.18
+            );
+
+            break;
+
+          // --------------------------------------------------
+          // WAVY
+          // --------------------------------------------------
+
+          case "wavy":
+            hairCap(
+              1.12,
+              1.15
+            );
+
+            ctx.beginPath();
+
+            for (
+              let i = -4;
+              i <= 4;
+              i++
+            ) {
+              const x =
+                cx +
+                i *
+                  headW *
+                  0.24;
+
+              ctx.moveTo(
+                x,
+                cy -
+                  headH *
+                    0.85
               );
-              ctx.stroke();
+
+              ctx.quadraticCurveTo(
+                x -
+                  headW * 0.08,
+                cy -
+                  headH *
+                    1.15,
+                x +
+                  headW * 0.08,
+                cy -
+                  headH *
+                    1.35
+              );
             }
-          }
-          break;
 
-        case "slick-back":
-          ctx.ellipse(
-            cx,
-            cy - 5,
-            headW * 1.12,
-            headH * 0.9,
-            0,
-            Math.PI,
-            Math.PI * 2
-          );
+            ctx.stroke();
 
-          for (let i = -3; i <= 3; i++) {
-            ctx.moveTo(cx + i * 22, cy - headH);
-            ctx.lineTo(cx + i * 35, cy - headH * 0.15);
-          }
-          break;
+            break;
 
-        case "undercut":
-          ctx.ellipse(
-            cx,
-            cy - 5,
-            headW,
-            headH * 0.9,
-            0,
-            Math.PI,
-            Math.PI * 2
-          );
-          break;
+          // --------------------------------------------------
+          // CURLY
+          // --------------------------------------------------
 
-        case "fade":
-          ctx.ellipse(
-            cx,
-            cy,
-            headW * 0.98,
-            headH * 0.85,
-            0,
-            Math.PI,
-            Math.PI * 2
-          );
-          break;
-
-        case "fringe":
-          ctx.ellipse(
-            cx,
-            cy,
-            headW * 1.08,
-            headH,
-            0,
-            Math.PI,
-            Math.PI * 2
-          );
-
-          ctx.beginPath();
-          ctx.moveTo(
-            cx - headW,
-            cy - headH * 0.2
-          );
-
-          ctx.quadraticCurveTo(
-            cx,
-            cy + headH * 0.5,
-            cx + headW,
-            cy - headH * 0.2
-          );
-          break;
-
-        case "buzz-cut":
-          ctx.arc(
-            cx,
-            cy,
-            headW,
-            Math.PI,
-            Math.PI * 2
-          );
-          break;
-
-        case "long-hair":
-          ctx.ellipse(
-            cx,
-            cy + headH * 0.45,
-            headW * 1.18,
-            headH * 1.65,
-            0,
-            Math.PI,
-            Math.PI * 2
-          );
-          break;
-
-        case "messy":
-          ctx.ellipse(
-            cx,
-            cy,
-            headW * 1.2,
-            headH * 1.15,
-            0,
-            Math.PI,
-            Math.PI * 2
-          );
-
-          for (let i = -5; i <= 5; i++) {
-            ctx.moveTo(cx + i * 18, cy - headH);
-            ctx.lineTo(
-              cx + i * 28,
-              cy - headH * 1.45
+          case "curly":
+            hairCap(
+              1.18,
+              1.2
             );
-          }
-          break;
 
-        default:
-          break;
-      }
+            for (
+              let row = 0;
+              row < 2;
+              row++
+            ) {
+              for (
+                let col = -4;
+                col <= 4;
+                col++
+              ) {
+                ctx.beginPath();
 
-      ctx.fillStyle = "rgba(35, 25, 20, 0.92)";
-      ctx.fill();
+                ctx.arc(
+                  cx +
+                    col *
+                      headW *
+                      0.22,
+                  cy -
+                    headH *
+                      (0.95 -
+                        row *
+                          0.15),
+                  headW * 0.09,
+                  0,
+                  Math.PI * 2
+                );
 
-      ctx.strokeStyle = "rgba(15,15,15,0.95)";
-      ctx.lineWidth = Math.max(2, w / 350);
+                ctx.fill();
+              }
+            }
 
-      ctx.stroke();
+            break;
 
-      ctx.restore();
-    },
-    []
-  );
+          default:
+            break;
+        }
+
+        ctx.restore();
+      },
+      [getHeadAnchor]
+    );
 
   // ==========================================================
   // RENDER CANVAS
   // ==========================================================
 
-  const renderCanvas = useCallback(() => {
-    const canvas = canvasRef.current;
-    const image = imageRef.current;
+  const renderCanvas =
+    useCallback(() => {
+      const canvas =
+        canvasRef.current;
 
-    if (!canvas || !image || !imageLoaded) {
-      return;
-    }
+      const image =
+        imageRef.current;
 
-    const ctx = canvas.getContext("2d", {
-      alpha: false,
-    });
+      if (
+        !canvas ||
+        !image ||
+        !imageLoaded
+      ) {
+        return;
+      }
 
-    const maxSize = 1600;
+      const ctx =
+        canvas.getContext(
+          "2d",
+          {
+            alpha: false,
+          }
+        );
 
-    let width = image.naturalWidth;
-    let height = image.naturalHeight;
+      if (!ctx) return;
 
-    if (width > maxSize || height > maxSize) {
-      const scale = Math.min(
-        maxSize / width,
-        maxSize / height
-      );
+      const maxSize = 1800;
 
-      width = Math.round(width * scale);
-      height = Math.round(height * scale);
-    }
+      let width =
+        image.naturalWidth;
 
-    canvas.width = width;
-    canvas.height = height;
+      let height =
+        image.naturalHeight;
 
-    ctx.clearRect(
-      0,
-      0,
-      canvas.width,
-      canvas.height
-    );
+      if (
+        width > maxSize ||
+        height > maxSize
+      ) {
+        const scale =
+          Math.min(
+            maxSize / width,
+            maxSize / height
+          );
 
-    // ========================================================
-    // IMAGE
-    // ========================================================
+        width =
+          Math.round(
+            width * scale
+          );
 
-    ctx.save();
+        height =
+          Math.round(
+            height * scale
+          );
+      }
 
-    ctx.filter = getCanvasFilter();
+      canvas.width = width;
+      canvas.height = height;
 
-    // background blur approximation:
-    // blur entire image slightly only.
-    // This is fully local.
-    if (blurIntensity === "low") {
-      ctx.filter += " blur(1px)";
-    }
-
-    if (blurIntensity === "medium") {
-      ctx.filter += " blur(2px)";
-    }
-
-    if (blurIntensity === "high") {
-      ctx.filter += " blur(4px)";
-    }
-
-    ctx.drawImage(
-      image,
-      0,
-      0,
-      width,
-      height
-    );
-
-    ctx.restore();
-
-    // ========================================================
-    // WARM OVERLAY
-    // ========================================================
-
-    if (activeFilter === "warm") {
-      ctx.save();
-
-      ctx.fillStyle =
-        "rgba(255,150,50,0.10)";
-
-      ctx.fillRect(
+      ctx.clearRect(
         0,
         0,
         width,
         height
       );
 
-      ctx.restore();
-    }
+      // ------------------------------------------------------
+      // BASE IMAGE
+      // ------------------------------------------------------
 
-    // ========================================================
-    // COOL OVERLAY
-    // ========================================================
-
-    if (activeFilter === "cool") {
       ctx.save();
 
-      ctx.fillStyle =
-        "rgba(60,130,255,0.09)";
-
-      ctx.fillRect(
-        0,
-        0,
-        width,
-        height
-      );
-
-      ctx.restore();
-    }
-
-    // ========================================================
-    // VINTAGE OVERLAY
-    // ========================================================
-
-    if (activeFilter === "vintage") {
-      ctx.save();
-
-      ctx.fillStyle =
-        "rgba(120,80,40,0.10)";
-
-      ctx.fillRect(
-        0,
-        0,
-        width,
-        height
-      );
-
-      ctx.restore();
-    }
-
-    // ========================================================
-    // CINEMATIC LETTERBOX
-    // ========================================================
-
-    if (activeFilter === "cinematic") {
-      ctx.save();
-
-      ctx.fillStyle =
-        "rgba(0,0,0,0.20)";
-
-      ctx.fillRect(
-        0,
-        0,
-        width,
-        Math.max(20, height * 0.06)
-      );
-
-      ctx.fillRect(
-        0,
-        height - Math.max(20, height * 0.06),
-        width,
-        Math.max(20, height * 0.06)
-      );
-
-      ctx.restore();
-    }
-
-    // ========================================================
-    // SOFT GLOW
-    // ========================================================
-
-    if (
-      activeFilter === "soft" ||
-      activeFilter === "face-glow"
-    ) {
-      ctx.save();
-
-      ctx.globalCompositeOperation =
-        "screen";
-
-      ctx.globalAlpha = 0.12;
-
-      ctx.filter = "blur(18px)";
+      ctx.filter =
+        getCanvasFilter();
 
       ctx.drawImage(
-        canvas,
+        image,
         0,
         0,
         width,
@@ -876,35 +1458,245 @@ export default function ImageEditor() {
       );
 
       ctx.restore();
-    }
 
-    // ========================================================
-    // HAIRSTYLE
-    // ========================================================
+      // ------------------------------------------------------
+      // WARM
+      // ------------------------------------------------------
 
-    drawHairstyle(
-      ctx,
-      canvas,
-      selectedHairstyle
-    );
+      if (
+        activeFilter === "warm" ||
+        activeFilter === "sunset" ||
+        activeFilter === "golden" ||
+        activeFilter === "amber" ||
+        activeFilter === "autumn"
+      ) {
+        ctx.save();
 
-    // ========================================================
-    // TEXT
-    // ========================================================
+        ctx.fillStyle =
+          "rgba(255,145,50,0.10)";
 
-    drawText(ctx, canvas);
-  }, [
-    imageLoaded,
-    getCanvasFilter,
-    blurIntensity,
-    activeFilter,
-    selectedHairstyle,
-    drawHairstyle,
-    drawText,
-  ]);
+        ctx.fillRect(
+          0,
+          0,
+          width,
+          height
+        );
+
+        ctx.restore();
+      }
+
+      // ------------------------------------------------------
+      // COOL
+      // ------------------------------------------------------
+
+      if (
+        activeFilter === "cool" ||
+        activeFilter === "ocean" ||
+        activeFilter === "arctic"
+      ) {
+        ctx.save();
+
+        ctx.fillStyle =
+          "rgba(70,140,255,0.08)";
+
+        ctx.fillRect(
+          0,
+          0,
+          width,
+          height
+        );
+
+        ctx.restore();
+      }
+
+      // ------------------------------------------------------
+      // VINTAGE
+      // ------------------------------------------------------
+
+      if (
+        activeFilter === "vintage" ||
+        activeFilter === "retro" ||
+        activeFilter === "film"
+      ) {
+        ctx.save();
+
+        ctx.fillStyle =
+          "rgba(120,80,40,0.10)";
+
+        ctx.fillRect(
+          0,
+          0,
+          width,
+          height
+        );
+
+        ctx.restore();
+      }
+
+      // ------------------------------------------------------
+      // MAGENTA / ROSE
+      // ------------------------------------------------------
+
+      if (
+        activeFilter === "rose" ||
+        activeFilter === "magenta"
+      ) {
+        ctx.save();
+
+        ctx.fillStyle =
+          "rgba(255,70,150,0.07)";
+
+        ctx.fillRect(
+          0,
+          0,
+          width,
+          height
+        );
+
+        ctx.restore();
+      }
+
+      // ------------------------------------------------------
+      // CINEMATIC
+      // ------------------------------------------------------
+
+      if (
+        activeFilter === "cinematic"
+      ) {
+        ctx.save();
+
+        ctx.fillStyle =
+          "rgba(0,0,0,0.20)";
+
+        const bar =
+          Math.max(
+            20,
+            height * 0.055
+          );
+
+        ctx.fillRect(
+          0,
+          0,
+          width,
+          bar
+        );
+
+        ctx.fillRect(
+          0,
+          height - bar,
+          width,
+          bar
+        );
+
+        ctx.restore();
+      }
+
+      // ------------------------------------------------------
+      // SOFT / GLOW
+      // ------------------------------------------------------
+
+      if (
+        activeFilter === "soft" ||
+        activeFilter === "face-glow" ||
+        activeFilter === "glow" ||
+        activeFilter === "dream"
+      ) {
+        ctx.save();
+
+        ctx.globalCompositeOperation =
+          "screen";
+
+        ctx.globalAlpha =
+          0.10;
+
+        ctx.filter =
+          "blur(16px)";
+
+        ctx.drawImage(
+          canvas,
+          0,
+          0,
+          width,
+          height
+        );
+
+        ctx.restore();
+      }
+
+      // ------------------------------------------------------
+      // BACKGROUND BLUR
+      // ------------------------------------------------------
+      // Browser-local approximation.
+      // Keeps image usable without AI/API.
+      // ------------------------------------------------------
+
+      if (
+        blurIntensity !==
+        "none"
+      ) {
+        const blurAmount =
+          blurIntensity === "low"
+            ? 1
+            : blurIntensity ===
+              "medium"
+            ? 2
+            : 4;
+
+        ctx.save();
+
+        ctx.globalAlpha =
+          blurIntensity ===
+          "high"
+            ? 0.18
+            : blurIntensity ===
+              "medium"
+            ? 0.10
+            : 0.06;
+
+        ctx.filter =
+          `blur(${blurAmount}px)`;
+
+        ctx.drawImage(
+          canvas,
+          0,
+          0,
+          width,
+          height
+        );
+
+        ctx.restore();
+      }
+
+      // ------------------------------------------------------
+      // HAIRSTYLE
+      // ------------------------------------------------------
+
+      drawHairstyle(
+        ctx,
+        canvas,
+        selectedHairstyle
+      );
+
+      // ------------------------------------------------------
+      // TEXT
+      // ------------------------------------------------------
+
+      drawText(
+        ctx,
+        canvas
+      );
+    }, [
+      imageLoaded,
+      getCanvasFilter,
+      activeFilter,
+      blurIntensity,
+      selectedHairstyle,
+      drawHairstyle,
+      drawText,
+    ]);
 
   // ==========================================================
-  // RERENDER
+  // RENDER EFFECT
   // ==========================================================
 
   useEffect(() => {
@@ -915,291 +1707,291 @@ export default function ImageEditor() {
   // FILE HANDLER
   // ==========================================================
 
-  const handleFile = useCallback((file) => {
-    if (!file) return;
+  const handleFile =
+    useCallback((file) => {
+      if (!file) return;
 
-    if (!file.type.startsWith("image/")) {
-      setErrorMessage(
-        "Please select a valid image."
-      );
-      return;
-    }
+      if (
+        !file.type.startsWith(
+          "image/"
+        )
+      ) {
+        setErrorMessage(
+          "Please select a valid image."
+        );
+        return;
+      }
 
-    if (file.size > 10 * 1024 * 1024) {
-      setErrorMessage(
-        "Maximum image size is 10MB."
-      );
-      return;
-    }
+      if (
+        file.size >
+        10 * 1024 * 1024
+      ) {
+        setErrorMessage(
+          "Maximum image size is 10MB."
+        );
+        return;
+      }
 
-    setErrorMessage("");
-    setSuccessMessage("");
+      setErrorMessage("");
+      setSuccessMessage("");
+      setAiResultUrl(null);
 
-    if (objectUrlRef.current) {
-      URL.revokeObjectURL(
+      if (
         objectUrlRef.current
-      );
-    }
+      ) {
+        URL.revokeObjectURL(
+          objectUrlRef.current
+        );
+      }
 
-    const url =
-      URL.createObjectURL(file);
+      const url =
+        URL.createObjectURL(
+          file
+        );
 
-    objectUrlRef.current = url;
+      objectUrlRef.current =
+        url;
 
-    const img = new Image();
+      const img =
+        new Image();
 
-    img.onload = () => {
-      imageRef.current = img;
+      img.onload = () => {
+        imageRef.current =
+          img;
 
-      setOriginalUrl(url);
-      setImageLoaded(true);
+        setOriginalUrl(url);
+        setImageLoaded(true);
 
-      setMetadata({
-        width: img.naturalWidth,
-        height: img.naturalHeight,
-        format:
-          file.type
-            .replace("image/", "")
-            .toUpperCase(),
-        size: file.size,
-      });
+        setMetadata({
+          width:
+            img.naturalWidth,
 
-      setActiveFilter("natural");
+          height:
+            img.naturalHeight,
 
-      setAdjustments({
-        brightness: 1,
-        contrast: 1,
-        saturation: 1,
-      });
+          format:
+            file.type
+              .replace(
+                "image/",
+                ""
+              )
+              .toUpperCase(),
 
-      setBlurIntensity("medium");
+          size: file.size,
+        });
 
-      setSelectedHairstyle("original");
+        setEditorState(
+          createEditorState()
+        );
 
-      setText("");
+        setHistory([]);
+        setFuture([]);
 
-      setHistory([]);
-      setHistoryIndex(-1);
+        setSuccessMessage(
+          "Image loaded. Free local editing is ready."
+        );
+      };
 
-      setSuccessMessage(
-        "Image loaded. All editing tools are running locally for free."
-      );
-    };
+      img.onerror = () => {
+        setErrorMessage(
+          "Image load failed."
+        );
+      };
 
-    img.onerror = () => {
-      setErrorMessage(
-        "Image load failed."
-      );
-    };
-
-    img.src = url;
-  }, []);
+      img.src = url;
+    }, []);
 
   // ==========================================================
   // FILE INPUT
   // ==========================================================
 
-  const handleFileInput = (e) => {
-    const file =
-      e.target.files?.[0];
+  const handleFileInput =
+    (e) => {
+      const file =
+        e.target.files?.[0];
 
-    if (file) {
-      handleFile(file);
-    }
+      if (file) {
+        handleFile(file);
+      }
 
-    e.target.value = "";
-  };
+      e.target.value = "";
+    };
 
   // ==========================================================
   // FILTER
   // ==========================================================
 
-  const applyFilter = (filterId) => {
-    if (!imageLoaded) return;
+  const applyFilter =
+    (filterId) => {
+      if (!imageLoaded) return;
 
-    saveHistory();
+      const filter =
+        getFilterById(
+          filterId
+        );
 
-    const values =
-      getFilterValues(filterId);
+      pushHistory();
 
-    setActiveFilter(filterId);
+      updateEditor({
+        activeFilter:
+          filter.id,
 
-    setAdjustments(values);
+        adjustments: {
+          brightness: filter.b,
+          contrast: filter.c,
+          saturation: filter.s,
+        },
+      });
 
-    setSuccessMessage(
-      `${filterId} applied locally.`
-    );
-  };
+      setSuccessMessage(
+        `${filter.label} applied — FREE.`
+      );
+    };
 
   // ==========================================================
   // ADJUSTMENT
   // ==========================================================
 
-  const handleAdjustment = (
-    key,
-    value
-  ) => {
-    if (!imageLoaded) return;
+  const handleAdjustment =
+    (key, value) => {
+      if (!imageLoaded) return;
 
-    setAdjustments((prev) => ({
-      ...prev,
-      [key]: Number(value),
-    }));
-  };
+      updateEditor({
+        adjustments: {
+          ...adjustments,
+          [key]: Number(value),
+        },
+      });
+    };
 
-  const commitAdjustment = () => {
-    saveHistory();
+  const commitAdjustment =
+    () => {
+      if (!imageLoaded) return;
 
-    setSuccessMessage(
-      "Adjustment applied locally."
-    );
-  };
+      pushHistory();
+
+      setSuccessMessage(
+        "Adjustment applied."
+      );
+    };
 
   // ==========================================================
   // QUICK ACTION
   // ==========================================================
 
-  const handleQuickAction = (
-    actionId
-  ) => {
-    if (!imageLoaded) return;
+  const handleQuickAction =
+    (actionId) => {
+      if (!imageLoaded) return;
 
-    switch (actionId) {
-      case "enhance":
-        saveHistory();
+      switch (actionId) {
+        case "enhance":
+          pushHistory();
 
-        setAdjustments({
-          brightness: 1.1,
-          contrast: 1.18,
-          saturation: 1.12,
-        });
+          updateEditor({
+            activeFilter:
+              "portrait-enhance",
 
-        setActiveFilter(
-          "portrait-enhance"
-        );
+            adjustments: {
+              brightness: 1.1,
+              contrast: 1.18,
+              saturation: 1.12,
+            },
+          });
 
-        break;
+          setSuccessMessage(
+            "Enhance applied locally."
+          );
 
-      case "upscale":
-        saveHistory();
+          break;
 
-        // Browser canvas already renders
-        // a high-quality resized output.
-        setSuccessMessage(
-          "2x upscale mode selected locally. Download the result to save it."
-        );
+        case "upscale":
+          pushHistory();
 
-        break;
+          setSuccessMessage(
+            "2x upscale quality mode selected. Download to save."
+          );
 
-      case "bw":
-        applyFilter("bw");
-        break;
+          break;
 
-      case "warm":
-        applyFilter("warm");
-        break;
+        case "bw":
+          applyFilter("bw");
+          break;
 
-      case "vintage":
-        applyFilter("vintage");
-        break;
+        case "warm":
+          applyFilter("warm");
+          break;
 
-      default:
-        break;
-    }
-  };
+        case "vintage":
+          applyFilter("vintage");
+          break;
+
+        case "clear":
+          applyFilter("clear");
+          break;
+
+        default:
+          break;
+      }
+    };
 
   // ==========================================================
   // BACKGROUND BLUR
   // ==========================================================
 
-  const applyBlur = (level) => {
-    if (!imageLoaded) return;
+  const applyBlur =
+    (level) => {
+      if (!imageLoaded) return;
 
-    saveHistory();
+      pushHistory();
 
-    setBlurIntensity(level);
+      updateEditor({
+        blurIntensity:
+          level,
+      });
 
-    setSuccessMessage(
-      `Background blur: ${level} — processed locally.`
-    );
-  };
+      setSuccessMessage(
+        `Background blur ${level} applied — FREE.`
+      );
+    };
 
   // ==========================================================
   // HAIRSTYLE
   // ==========================================================
 
-  const applyHairstyle = (style) => {
-    if (!imageLoaded) return;
+  const applyHairstyle =
+    (style) => {
+      if (!imageLoaded) return;
 
-    saveHistory();
+      pushHistory();
 
-    setSelectedHairstyle(style);
+      updateEditor({
+        selectedHairstyle:
+          style,
+      });
 
-    setSuccessMessage(
-      style === "original"
-        ? "Original hairstyle restored."
-        : `${style} hairstyle preview applied locally — no AI/API used.`
-    );
-  };
+      setSuccessMessage(
+        style === "original"
+          ? "Original hairstyle restored."
+          : `${style} hairstyle applied FREE.`
+      );
+    };
 
   // ==========================================================
   // TEXT
   // ==========================================================
 
   const applyText = () => {
-    if (!imageLoaded || !text.trim()) {
+    if (
+      !imageLoaded ||
+      !text.trim()
+    ) {
       return;
     }
 
-    saveHistory();
+    pushHistory();
 
     setSuccessMessage(
-      "Text added locally."
-    );
-  };
-
-  // ==========================================================
-  // UNDO
-  // ==========================================================
-
-  const undo = () => {
-    if (historyIndex < 0) {
-      return;
-    }
-
-    const snapshot =
-      history[historyIndex];
-
-    if (!snapshot) return;
-
-    setActiveFilter(
-      snapshot.activeFilter
-    );
-
-    setAdjustments(
-      snapshot.adjustments
-    );
-
-    setBlurIntensity(
-      snapshot.blurIntensity
-    );
-
-    setSelectedHairstyle(
-      snapshot.selectedHairstyle
-    );
-
-    setText(snapshot.text);
-    setTextColor(snapshot.textColor);
-    setTextSize(snapshot.textSize);
-    setTextX(snapshot.textX);
-    setTextY(snapshot.textY);
-
-    setHistoryIndex(
-      historyIndex - 1
-    );
-
-    setSuccessMessage(
-      "One step back."
+      "Text added FREE."
     );
   };
 
@@ -1207,39 +1999,20 @@ export default function ImageEditor() {
   // RESET
   // ==========================================================
 
-  const resetEditor = () => {
-    if (!imageLoaded) return;
+  const resetEditor =
+    () => {
+      if (!imageLoaded) return;
 
-    setActiveFilter("natural");
+      pushHistory();
 
-    setAdjustments({
-      brightness: 1,
-      contrast: 1,
-      saturation: 1,
-    });
+      updateEditor(
+        createEditorState()
+      );
 
-    setBlurIntensity("medium");
-
-    setSelectedHairstyle("original");
-
-    setText("");
-
-    setTextColor("#ffffff");
-
-    setTextSize(32);
-
-    setTextX(50);
-
-    setTextY(50);
-
-    setHistory([]);
-
-    setHistoryIndex(-1);
-
-    setSuccessMessage(
-      "Image reset to original."
-    );
-  };
+      setSuccessMessage(
+        "Image reset."
+      );
+    };
 
   // ==========================================================
   // NEW IMAGE
@@ -1250,66 +2023,169 @@ export default function ImageEditor() {
   };
 
   // ==========================================================
-  // DOWNLOAD
+  // AI EDIT
   // ==========================================================
 
-  const downloadImage = () => {
-    const canvas =
-      canvasRef.current;
+  const handleAIEdit =
+    async () => {
+      if (
+        !imageLoaded ||
+        !aiInstruction.trim()
+      ) {
+        return;
+      }
 
-    if (!canvas) return;
+      setIsProcessing(true);
+      setErrorMessage("");
+      setSuccessMessage("");
 
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) {
-          setErrorMessage(
-            "Unable to create image."
+      try {
+        // ----------------------------------------------------
+        // Upload original image to backend
+        // ----------------------------------------------------
+
+        const response =
+          await apiService.uploadImage(
+            await fetch(
+              originalUrl
+            ).then((r) =>
+              r.blob()
+            )
           );
-          return;
+
+        const uploadData =
+          response?.data?.data ||
+          response?.data ||
+          {};
+
+        const imagePath =
+          apiService.resolveImageFilename(
+            uploadData
+          );
+
+        if (!imagePath) {
+          throw new Error(
+            "AI image upload failed."
+          );
+        }
+
+        // ----------------------------------------------------
+        // AI EDIT
+        // ----------------------------------------------------
+
+        const result =
+          await apiService.aiEditImage(
+            imagePath,
+            aiInstruction.trim()
+          );
+
+        const resultData =
+          result?.data?.data ||
+          result?.data ||
+          {};
+
+        const filename =
+          apiService.resolveImageFilename(
+            resultData
+          );
+
+        if (!filename) {
+          throw new Error(
+            "AI did not return an edited image."
+          );
         }
 
         const url =
-          URL.createObjectURL(blob);
+          apiService.buildPreviewUrl(
+            filename
+          );
 
-        const a =
-          document.createElement("a");
-
-        a.href = url;
-
-        a.download =
-          `edited-image-${Date.now()}.png`;
-
-        document.body.appendChild(a);
-
-        a.click();
-
-        a.remove();
-
-        URL.revokeObjectURL(url);
+        setAiResultUrl(url);
 
         setSuccessMessage(
-          "Image downloaded successfully."
+          "AI edit completed."
         );
-      },
-      "image/png",
-      1
-    );
-  };
+      } catch (error) {
+        setErrorMessage(
+          error?.message ||
+            "AI edit failed. Please try again."
+        );
+      } finally {
+        setIsProcessing(false);
+      }
+    };
 
   // ==========================================================
-  // DRAG & DROP
+  // DOWNLOAD
   // ==========================================================
 
-  const handleDrop = (e) => {
-    e.preventDefault();
+  const downloadImage =
+    () => {
+      const canvas =
+        canvasRef.current;
 
-    const file =
-      e.dataTransfer.files?.[0];
+      if (!canvas) return;
 
-    if (file) {
-      handleFile(file);
-    }
-  };
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            setErrorMessage(
+              "Unable to create image."
+            );
+            return;
+          }
+
+          const url =
+            URL.createObjectURL(
+              blob
+            );
+
+          const a =
+            document.createElement(
+              "a"
+            );
+
+          a.href = url;
+
+          a.download =
+            `edited-image-${Date.now()}.png`;
+
+          document.body.appendChild(
+            a
+          );
+
+          a.click();
+
+          a.remove();
+
+          URL.revokeObjectURL(
+            url
+          );
+
+          setSuccessMessage(
+            "Image downloaded successfully."
+          );
+        },
+        "image/png",
+        1
+      );
+    };
+
+  // ==========================================================
+  // DROP
+  // ==========================================================
+
+  const handleDrop =
+    (e) => {
+      e.preventDefault();
+
+      const file =
+        e.dataTransfer.files?.[0];
+
+      if (file) {
+        handleFile(file);
+      }
+    };
 
   // ==========================================================
   // CLEANUP
@@ -1317,7 +2193,9 @@ export default function ImageEditor() {
 
   useEffect(() => {
     return () => {
-      if (objectUrlRef.current) {
+      if (
+        objectUrlRef.current
+      ) {
         URL.revokeObjectURL(
           objectUrlRef.current
         );
@@ -1337,37 +2215,41 @@ export default function ImageEditor() {
       }
       onDrop={handleDrop}
     >
-      {/* =====================================================
+      {/* ====================================================
           HEADER
-      ===================================================== */}
+      ==================================================== */}
 
       <div className="image-editor-header">
         <h1>
-          Free Image Editor
+          AI Image Editor
         </h1>
 
         <p className="subtitle">
-          Edit your images locally —
-          no AI credits and no image
-          editing API required.
+          Free filters, hairstyles,
+          blur, text & editing +
+          AI editing when available.
         </p>
       </div>
 
-      {/* =====================================================
-          HIDDEN INPUT
-      ===================================================== */}
+      {/* ====================================================
+          INPUT
+      ==================================================== */}
 
       <input
         ref={fileInputRef}
         type="file"
         accept="image/jpeg,image/png,image/webp"
-        onChange={handleFileInput}
-        style={{ display: "none" }}
+        onChange={
+          handleFileInput
+        }
+        style={{
+          display: "none",
+        }}
       />
 
-      {/* =====================================================
-          MESSAGES
-      ===================================================== */}
+      {/* ====================================================
+          ERROR
+      ==================================================== */}
 
       {errorMessage && (
         <div className="error-banner">
@@ -1383,6 +2265,10 @@ export default function ImageEditor() {
         </div>
       )}
 
+      {/* ====================================================
+          SUCCESS
+      ==================================================== */}
+
       {successMessage && (
         <div className="success-banner">
           ✓ {successMessage}
@@ -1397,9 +2283,9 @@ export default function ImageEditor() {
         </div>
       )}
 
-      {/* =====================================================
+      {/* ====================================================
           EMPTY
-      ===================================================== */}
+      ==================================================== */}
 
       {!imageLoaded && (
         <div
@@ -1419,24 +2305,23 @@ export default function ImageEditor() {
           </p>
 
           <p className="upload-hint">
-            JPG, PNG, WebP — up to 10MB
+            JPG, PNG, WebP — up to
+            10MB
           </p>
         </div>
       )}
 
-      {/* =====================================================
+      {/* ====================================================
           EDITOR
-      ===================================================== */}
+      ==================================================== */}
 
       {imageLoaded && (
         <div className="editor-layout">
-
-          {/* =================================================
+          {/* ==================================================
               SIDEBAR
-          ================================================= */}
+          ================================================== */}
 
           <aside className="editor-sidebar">
-
             {/* NEW IMAGE */}
 
             <button
@@ -1452,17 +2337,31 @@ export default function ImageEditor() {
               className="reset-btn"
               onClick={undo}
               disabled={
-                historyIndex < 0
+                history.length === 0
               }
             >
               ↩️ Back / Undo
+            </button>
+
+            {/* REDO */}
+
+            <button
+              className="reset-btn"
+              onClick={redo}
+              disabled={
+                future.length === 0
+              }
+            >
+              ↪️ Redo
             </button>
 
             {/* RESET */}
 
             <button
               className="reset-btn"
-              onClick={resetEditor}
+              onClick={
+                resetEditor
+              }
             >
               🔄 Reset
             </button>
@@ -1473,14 +2372,19 @@ export default function ImageEditor() {
 
             <div className="tool-section">
               <h3>
-                Filters
+                Filters{" "}
+                <small>
+                  ({FILTERS.length}+ Free)
+                </small>
               </h3>
 
               <div className="filter-grid">
                 {FILTERS.map(
                   (filter) => (
                     <button
-                      key={filter.id}
+                      key={
+                        filter.id
+                      }
                       className={`filter-btn ${
                         activeFilter ===
                         filter.id
@@ -1494,11 +2398,15 @@ export default function ImageEditor() {
                       }
                     >
                       <span className="filter-icon">
-                        {filter.icon}
+                        {
+                          filter.icon
+                        }
                       </span>
 
                       <span className="filter-label">
-                        {filter.label}
+                        {
+                          filter.label
+                        }
                       </span>
                     </button>
                   )
@@ -1521,7 +2429,7 @@ export default function ImageEditor() {
 
                   <span>
                     {adjustments.brightness.toFixed(
-                      1
+                      2
                     )}
                     x
                   </span>
@@ -1544,6 +2452,9 @@ export default function ImageEditor() {
                   onMouseUp={
                     commitAdjustment
                   }
+                  onTouchEnd={
+                    commitAdjustment
+                  }
                 />
               </div>
 
@@ -1553,7 +2464,7 @@ export default function ImageEditor() {
 
                   <span>
                     {adjustments.contrast.toFixed(
-                      1
+                      2
                     )}
                     x
                   </span>
@@ -1576,6 +2487,9 @@ export default function ImageEditor() {
                   onMouseUp={
                     commitAdjustment
                   }
+                  onTouchEnd={
+                    commitAdjustment
+                  }
                 />
               </div>
 
@@ -1585,7 +2499,7 @@ export default function ImageEditor() {
 
                   <span>
                     {adjustments.saturation.toFixed(
-                      1
+                      2
                     )}
                     x
                   </span>
@@ -1608,6 +2522,9 @@ export default function ImageEditor() {
                   onMouseUp={
                     commitAdjustment
                   }
+                  onTouchEnd={
+                    commitAdjustment
+                  }
                 />
               </div>
             </div>
@@ -1625,7 +2542,9 @@ export default function ImageEditor() {
                 {QUICK_ACTIONS.map(
                   (action) => (
                     <button
-                      key={action.id}
+                      key={
+                        action.id
+                      }
                       className="quick-action-btn"
                       onClick={() =>
                         handleQuickAction(
@@ -1634,11 +2553,15 @@ export default function ImageEditor() {
                       }
                     >
                       <span>
-                        {action.icon}
+                        {
+                          action.icon
+                        }
                       </span>
 
                       <span>
-                        {action.label}
+                        {
+                          action.label
+                        }
                       </span>
                     </button>
                   )
@@ -1647,62 +2570,74 @@ export default function ImageEditor() {
             </div>
 
             {/* =================================================
-                BLUR
+                BACKGROUND BLUR
             ================================================= */}
 
             <div className="tool-section">
               <h3>
                 Background Blur
+                <small>
+                  {" "}
+                  — Free
+                </small>
               </h3>
 
               <div className="quick-actions-grid">
                 {[
+                  "none",
                   "low",
                   "medium",
                   "high",
-                ].map((level) => (
-                  <button
-                    key={level}
-                    className={`quick-action-btn ${
-                      blurIntensity ===
-                      level
-                        ? "active"
-                        : ""
-                    }`}
-                    onClick={() =>
-                      applyBlur(level)
-                    }
-                  >
-                    {level}
-                  </button>
-                ))}
+                ].map(
+                  (level) => (
+                    <button
+                      key={level}
+                      className={`quick-action-btn ${
+                        blurIntensity ===
+                        level
+                          ? "active"
+                          : ""
+                      }`}
+                      onClick={() =>
+                        applyBlur(
+                          level
+                        )
+                      }
+                    >
+                      {level}
+                    </button>
+                  )
+                )}
               </div>
 
               <p
                 style={{
-                  fontSize: "12px",
+                  fontSize:
+                    "12px",
                   opacity: 0.65,
                 }}
               >
-                Browser-local blur.
-                No API used.
+                Free browser-local
+                effect.
               </p>
             </div>
 
             {/* =================================================
-                HAIRSTYLES
+                FREE HAIRSTYLES
             ================================================= */}
 
             <div className="tool-section">
               <h3>
-                Hairstyles — Free
+                Hairstyles — FREE
               </h3>
 
               <div className="filter-grid">
                 {HAIRSTYLES.map(
                   (style) => (
                     <button
-                      key={style.id}
+                      key={
+                        style.id
+                      }
                       className={`filter-btn ${
                         selectedHairstyle ===
                         style.id
@@ -1716,11 +2651,15 @@ export default function ImageEditor() {
                       }
                     >
                       <span className="filter-icon">
-                        {style.icon}
+                        {
+                          style.icon
+                        }
                       </span>
 
                       <span className="filter-label">
-                        {style.label}
+                        {
+                          style.label
+                        }
                       </span>
                     </button>
                   )
@@ -1729,13 +2668,14 @@ export default function ImageEditor() {
 
               <p
                 style={{
-                  fontSize: "11px",
+                  fontSize:
+                    "11px",
                   opacity: 0.65,
                 }}
               >
                 Free local hairstyle
-                preview. AI/API is not
-                used.
+                preview. No AI
+                credits are used.
               </p>
             </div>
 
@@ -1752,7 +2692,10 @@ export default function ImageEditor() {
                 type="text"
                 value={text}
                 onChange={(e) =>
-                  setText(e.target.value)
+                  updateEditor({
+                    text: e.target
+                      .value,
+                  })
                 }
                 placeholder="New text..."
                 className="ai-input"
@@ -1766,11 +2709,17 @@ export default function ImageEditor() {
                 type="range"
                 min="12"
                 max="120"
-                value={textSize}
+                value={
+                  textSize
+                }
                 onChange={(e) =>
-                  setTextSize(
-                    Number(e.target.value)
-                  )
+                  updateEditor({
+                    textSize:
+                      Number(
+                        e.target
+                          .value
+                      ),
+                  })
                 }
               />
 
@@ -1780,11 +2729,15 @@ export default function ImageEditor() {
 
               <input
                 type="color"
-                value={textColor}
+                value={
+                  textColor
+                }
                 onChange={(e) =>
-                  setTextColor(
-                    e.target.value
-                  )
+                  updateEditor({
+                    textColor:
+                      e.target
+                        .value,
+                  })
                 }
               />
 
@@ -1796,11 +2749,17 @@ export default function ImageEditor() {
                 type="range"
                 min="0"
                 max="100"
-                value={textX}
+                value={
+                  textX
+                }
                 onChange={(e) =>
-                  setTextX(
-                    Number(e.target.value)
-                  )
+                  updateEditor({
+                    textX:
+                      Number(
+                        e.target
+                          .value
+                      ),
+                  })
                 }
               />
 
@@ -1812,33 +2771,134 @@ export default function ImageEditor() {
                 type="range"
                 min="0"
                 max="100"
-                value={textY}
+                value={
+                  textY
+                }
                 onChange={(e) =>
-                  setTextY(
-                    Number(e.target.value)
-                  )
+                  updateEditor({
+                    textY:
+                      Number(
+                        e.target
+                          .value
+                      ),
+                  })
                 }
               />
 
               <button
                 className="ai-edit-btn"
-                onClick={applyText}
-                disabled={!text.trim()}
+                onClick={
+                  applyText
+                }
+                disabled={
+                  !text.trim()
+                }
               >
                 Add Text
               </button>
 
               <p
                 style={{
-                  fontSize: "11px",
+                  fontSize:
+                    "11px",
                   opacity: 0.65,
                 }}
               >
-                This adds replacement text
-                locally. Automatic OCR +
-                removal of existing text is
-                not performed.
+                Text editing is
+                completely free.
               </p>
+            </div>
+
+            {/* =================================================
+                AI EDIT — PRESERVED
+            ================================================= */}
+
+            <div className="tool-section">
+              <h3>
+                🤖 AI Edit
+              </h3>
+
+              <p
+                style={{
+                  fontSize:
+                    "12px",
+                  opacity: 0.75,
+                }}
+              >
+                AI features remain
+                available here.
+                Local filters and
+                hairstyles never
+                require AI credits.
+              </p>
+
+              <textarea
+                value={
+                  aiInstruction
+                }
+                onChange={(e) =>
+                  setAiInstruction(
+                    e.target
+                      .value
+                  )
+                }
+                placeholder="Example: background white kar do, HD kar do, cinematic bana do..."
+                className="ai-input"
+                rows={4}
+              />
+
+              <button
+                className="ai-edit-btn"
+                onClick={
+                  handleAIEdit
+                }
+                disabled={
+                  isProcessing ||
+                  !aiInstruction.trim()
+                }
+              >
+                {isProcessing
+                  ? "⏳ Processing..."
+                  : "✨ Apply AI Edit"}
+              </button>
+
+              <div
+                style={{
+                  display:
+                    "flex",
+                  gap: "6px",
+                  flexWrap:
+                    "wrap",
+                  marginTop:
+                    "8px",
+                }}
+              >
+                {[
+                  "background white kar do",
+                  "HD kar do",
+                  "cinematic bana do",
+                  "brightness badha do",
+                ].map(
+                  (example) => (
+                    <button
+                      key={
+                        example
+                      }
+                      type="button"
+                      className="quick-action-btn"
+                      onClick={() =>
+                        setAiInstruction(
+                          example
+                        )
+                      }
+                    >
+                      {
+                        example
+                      }
+                    </button>
+                  )
+                )}
+              </div>
             </div>
 
             {/* =================================================
@@ -1847,17 +2907,20 @@ export default function ImageEditor() {
 
             <button
               className="new-image-btn"
-              onClick={downloadImage}
+              onClick={
+                downloadImage
+              }
             >
               ⬇️ Download Image
             </button>
           </aside>
 
-          {/* =================================================
+          {/* ==================================================
               PREVIEW
-          ================================================= */}
+          ================================================== */}
 
           <main className="editor-preview">
+            {/* ORIGINAL */}
 
             <div className="preview-section">
               <h3>
@@ -1866,7 +2929,9 @@ export default function ImageEditor() {
 
               <div className="image-frame">
                 <img
-                  src={originalUrl}
+                  src={
+                    originalUrl
+                  }
                   alt="Original"
                   className="preview-image"
                 />
@@ -1875,12 +2940,19 @@ export default function ImageEditor() {
               {metadata && (
                 <div className="image-info">
                   <span className="info-badge">
-                    {metadata.width} ×{" "}
-                    {metadata.height}
+                    {
+                      metadata.width
+                    }{" "}
+                    ×{" "}
+                    {
+                      metadata.height
+                    }
                   </span>
 
                   <span className="info-badge">
-                    {metadata.format}
+                    {
+                      metadata.format
+                    }
                   </span>
 
                   <span className="info-badge">
@@ -1888,12 +2960,16 @@ export default function ImageEditor() {
                       metadata.size /
                       1024 /
                       1024
-                    ).toFixed(2)}{" "}
+                    ).toFixed(
+                      2
+                    )}{" "}
                     MB
                   </span>
                 </div>
               )}
             </div>
+
+            {/* EDITED */}
 
             <div className="preview-section">
               <h3>
@@ -1902,18 +2978,20 @@ export default function ImageEditor() {
 
               <div className="image-frame">
                 <canvas
-                  ref={canvasRef}
+                  ref={
+                    canvasRef
+                  }
                   className="preview-image"
                 />
               </div>
 
               <div className="image-info">
                 <span className="info-badge">
-                  Local Processing
+                  Local Editing
                 </span>
 
                 <span className="info-badge">
-                  API: 0 calls
+                  50+ Filters
                 </span>
 
                 <span className="info-badge">
@@ -1922,6 +3000,44 @@ export default function ImageEditor() {
               </div>
             </div>
 
+            {/* =================================================
+                AI RESULT
+            ================================================= */}
+
+            {aiResultUrl && (
+              <div className="preview-section">
+                <h3>
+                  🤖 AI Result
+                </h3>
+
+                <div className="image-frame">
+                  <img
+                    src={
+                      aiResultUrl
+                    }
+                    alt="AI Result"
+                    className="preview-image"
+                  />
+                </div>
+
+                <div className="image-info">
+                  <span className="info-badge">
+                    AI Processed
+                  </span>
+
+                  <a
+                    href={
+                      aiResultUrl
+                    }
+                    target="_blank"
+                    rel="noreferrer"
+                    className="info-badge"
+                  >
+                    Open Result
+                  </a>
+                </div>
+              </div>
+            )}
           </main>
         </div>
       )}

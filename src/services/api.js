@@ -1,43 +1,48 @@
+```javascript
 // ============================================================
 // API SERVICE — Centralized API client
-// Image Editor endpoints are STATELESS: upload returns a server
-// filename, and every edit operation sends it back as `imagePath`.
 // ============================================================
 
 import axios from "axios";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 60000, // 60s for image operations
+  timeout: 120000,
   headers: {
     "Content-Type": "application/json",
   },
 });
 
-// ============================================
-// REQUEST INTERCEPTOR — Attach auth token
-// ============================================
+// ============================================================
+// AUTH INTERCEPTOR
+// ============================================================
 
 api.interceptors.request.use(
   (config) => {
     const token =
-      localStorage.getItem("token") || sessionStorage.getItem("token");
+      localStorage.getItem("token") ||
+      sessionStorage.getItem("token");
+
     if (token) {
+      config.headers = config.headers || {};
       config.headers.Authorization = `Bearer ${token}`;
     }
+
     return config;
   },
   (error) => Promise.reject(error)
 );
 
-// ============================================
-// RESPONSE INTERCEPTOR — Handle common errors
-// ============================================
+// ============================================================
+// RESPONSE INTERCEPTOR
+// ============================================================
 
 api.interceptors.response.use(
   (response) => response,
+
   (error) => {
     if (error.response) {
       const { status, data } = error.response;
@@ -45,105 +50,154 @@ api.interceptors.response.use(
       if (status === 401) {
         localStorage.removeItem("token");
         sessionStorage.removeItem("token");
+
         if (!window.location.pathname.includes("/login")) {
           window.location.href = "/login";
         }
       }
 
       const message =
-        data?.message || data?.error || `Request failed (${status})`;
+        data?.message ||
+        data?.error ||
+        `Request failed (${status})`;
+
       error.message = message;
       error.responseData = data;
     } else if (error.request) {
-      error.message = "No response from server. Check your connection.";
+      error.message =
+        "No response from server. Check your connection.";
     }
 
     return Promise.reject(error);
   }
 );
 
-// ============================================
-// IMAGE EDITOR — URL / FILENAME NORMALIZATION
-// Single source of truth for extracting a safe filename from ANY
-// backend response format:
-//   - { path: "adjusted_uuid.jpg" }                          (new backend)
-//   - { path: "/app/temp/processed/adjusted_uuid.jpg" }      (old backend, full fs path)
-//   - { path: "C:\\app\\temp\\adjusted_uuid.jpg" }           (old backend, Windows)
-//   - { preview: "/api/image-editor/preview/adjusted_x.jpg" }
-//   - { resultUrl: ".../preview/adjusted_x.jpg" }
-//   - { filename: "adjusted_x.jpg" }
+// ============================================================
+// SAFE FILENAME
 // ============================================================
 
-/**
- * Extract a safe basename from any value (URL, path, or plain filename).
- * Returns null if nothing safe can be extracted.
- */
 const extractBasename = (value) => {
-  if (!value || typeof value !== "string") return null;
-  // Never treat data:/blob: URLs as filenames
-  if (value.startsWith("data:") || value.startsWith("blob:")) return null;
-  // Strip query/hash, then take everything after the last / or \
-  const clean = value.split("?")[0].split("#")[0];
-  const name = clean.split("/").pop().split("\\").pop();
+  if (!value || typeof value !== "string") {
+    return null;
+  }
+
+  if (
+    value.startsWith("data:") ||
+    value.startsWith("blob:")
+  ) {
+    return null;
+  }
+
+  const clean = value
+    .split("?")[0]
+    .split("#")[0];
+
+  const name = clean
+    .split("/")
+    .pop()
+    .split("\\")
+    .pop();
+
   if (!name) return null;
-  // Must be a safe filename with an extension (blocks traversal payloads)
-  if (!/^[a-zA-Z0-9._-]+$/.test(name)) return null;
-  if (!name.includes(".")) return null;
+
+  if (!/^[a-zA-Z0-9._-]+$/.test(name)) {
+    return null;
+  }
+
+  if (!name.includes(".")) {
+    return null;
+  }
+
   return name;
 };
 
-/**
- * Resolve the result filename from a backend response data object.
- * Checks preview URL → resultUrl → path → filename, in that order.
- */
-const resolveImageFilename = (d = {}) => {
+// ============================================================
+// RESULT FILENAME
+// ============================================================
+
+const resolveImageFilename = (data = {}) => {
   return (
-    extractBasename(d.preview) ||
-    extractBasename(d.resultUrl) ||
-    extractBasename(d.path) ||
-    extractBasename(d.filename) ||
+    extractBasename(data.preview) ||
+    extractBasename(data.resultUrl) ||
+    extractBasename(data.path) ||
+    extractBasename(data.filename) ||
     null
   );
 };
 
-/**
- * Build the canonical preview URL for a filename.
- * Cache-busting param included so repeated edits always refresh.
- */
+// ============================================================
+// PREVIEW URL
+// ============================================================
+
 const buildPreviewUrl = (filename) => {
   const name = extractBasename(filename);
+
   if (!name) return null;
 
-  return `${API_BASE_URL}/api/image-editor/preview/${encodeURIComponent(name)}`;
+  return `${API_BASE_URL}/api/image-editor/preview/${encodeURIComponent(
+    name
+  )}?t=${Date.now()}`;
 };
 
-/**
- * Build the canonical download URL for a filename.
- * Points at the SAME generated file as the preview.
- */
+// ============================================================
+// DOWNLOAD URL
+// ============================================================
+
 const buildDownloadUrl = (filename) => {
   const name = extractBasename(filename);
+
   if (!name) return null;
-  return `${API_BASE_URL}/api/image-editor/download/${encodeURIComponent(name)}`;
+
+  return `${API_BASE_URL}/api/image-editor/download/${encodeURIComponent(
+    name
+  )}`;
 };
 
-// Legacy helper kept for compatibility
+// ============================================================
+// LEGACY URL HELPER
+// ============================================================
+
 const absolutize = (url) => {
   if (!url) return null;
-  if (url.startsWith("http") || url.startsWith("blob:") || url.startsWith("data:")) return url;
+
+  if (
+    url.startsWith("http") ||
+    url.startsWith("blob:") ||
+    url.startsWith("data:")
+  ) {
+    return url;
+  }
+
   return `${API_BASE_URL}${url}`;
 };
 
-// ============================================
-// GENERIC API METHODS
-// ============================================
+// ============================================================
+// API SERVICE
+// ============================================================
 
 const apiService = {
-  get: (url, config = {}) => api.get(url, config),
-  post: (url, data, config = {}) => api.post(url, data, config),
-  put: (url, data, config = {}) => api.put(url, data, config),
-  patch: (url, data, config = {}) => api.patch(url, data, config),
-  delete: (url, config = {}) => api.delete(url, config),
+  // ----------------------------------------------------------
+  // GENERIC
+  // ----------------------------------------------------------
+
+  get: (url, config = {}) =>
+    api.get(url, config),
+
+  post: (url, data, config = {}) =>
+    api.post(url, data, config),
+
+  put: (url, data, config = {}) =>
+    api.put(url, data, config),
+
+  patch: (url, data, config = {}) =>
+    api.patch(url, data, config),
+
+  delete: (url, config = {}) =>
+    api.delete(url, config),
+
+  // ----------------------------------------------------------
+  // HELPERS
+  // ----------------------------------------------------------
 
   absolutize,
   extractBasename,
@@ -151,77 +205,267 @@ const apiService = {
   buildPreviewUrl,
   buildDownloadUrl,
 
-  // ============================================
-  // IMAGE UPLOAD — multipart/form-data, field name MUST be "image"
-  // (Do NOT set Content-Type manually — axios sets the boundary)
-  // ============================================
- uploadImage: (file) => {
-  const formData = new FormData();
+  // ----------------------------------------------------------
+  // UPLOAD
+  // ----------------------------------------------------------
 
-  formData.append("image", file, file.name);
+  uploadImage: (file) => {
+    const formData = new FormData();
 
-  return api.post("/api/image-editor/upload", formData, {
-    headers: {
-      "Content-Type": undefined,
-    },
-  });
-},
+    formData.append(
+      "image",
+      file,
+      file.name
+    );
 
-  // ============================================
-  // IMAGE EDITING OPERATIONS — all stateless via imagePath
-  // imagePath is always a SAFE basename returned by a previous call
-  // ============================================
+    return api.post(
+      "/api/image-editor/upload",
+      formData,
+      {
+        headers: {
+          "Content-Type": undefined,
+        },
+      }
+    );
+  },
+
+  // ----------------------------------------------------------
+  // FILTER
+  // ----------------------------------------------------------
 
   applyFilter: (imagePath, filter) =>
-    api.post("/api/image-editor/filter", { imagePath, filter }),
+    api.post(
+      "/api/image-editor/filter",
+      {
+        imagePath,
+        filter,
+      }
+    ),
 
-  applyAdjustments: (imagePath, adjustments) =>
-    api.post("/api/image-editor/adjust", { imagePath, adjustments }),
+  // ----------------------------------------------------------
+  // ADJUSTMENTS
+  // ----------------------------------------------------------
+
+  applyAdjustments: (
+    imagePath,
+    adjustments
+  ) =>
+    api.post(
+      "/api/image-editor/adjust",
+      {
+        imagePath,
+        adjustments,
+      }
+    ),
+
+  // ----------------------------------------------------------
+  // ENHANCE
+  // ----------------------------------------------------------
 
   enhanceImage: (imagePath) =>
-    api.post("/api/image-editor/enhance", { imagePath, scale: 1.5 }),
+    api.post(
+      "/api/image-editor/enhance",
+      {
+        imagePath,
+        scale: 1.5,
+      }
+    ),
 
-  upscaleImage: (imagePath, scale = 2) =>
-    api.post("/api/image-editor/upscale", { imagePath, scale }),
+  // ----------------------------------------------------------
+  // UPSCALE
+  // ----------------------------------------------------------
 
-  resizeImage: (imagePath, width, height, fit = "cover") =>
-    api.post("/api/image-editor/resize", { imagePath, width, height, fit }),
+  upscaleImage: (
+    imagePath,
+    scale = 2
+  ) =>
+    api.post(
+      "/api/image-editor/upscale",
+      {
+        imagePath,
+        scale,
+      }
+    ),
 
-  cropImage: (imagePath, left, top, width, height) =>
-    api.post("/api/image-editor/crop", { imagePath, left, top, width, height }),
+  // ----------------------------------------------------------
+  // RESIZE
+  // ----------------------------------------------------------
 
-  rotateImage: (imagePath, degrees = 90) =>
-    api.post("/api/image-editor/rotate", { imagePath, degrees }),
+  resizeImage: (
+    imagePath,
+    width,
+    height,
+    fit = "cover"
+  ) =>
+    api.post(
+      "/api/image-editor/resize",
+      {
+        imagePath,
+        width,
+        height,
+        fit,
+      }
+    ),
+
+  // ----------------------------------------------------------
+  // CROP
+  // ----------------------------------------------------------
+
+  cropImage: (
+    imagePath,
+    left,
+    top,
+    width,
+    height
+  ) =>
+    api.post(
+      "/api/image-editor/crop",
+      {
+        imagePath,
+        left,
+        top,
+        width,
+        height,
+      }
+    ),
+
+  // ----------------------------------------------------------
+  // ROTATE
+  // ----------------------------------------------------------
+
+  rotateImage: (
+    imagePath,
+    degrees = 90
+  ) =>
+    api.post(
+      "/api/image-editor/rotate",
+      {
+        imagePath,
+        degrees,
+      }
+    ),
+
+  // ----------------------------------------------------------
+  // REMOVE BACKGROUND
+  // ----------------------------------------------------------
 
   removeBackground: (imagePath) =>
-    api.post("/api/image-editor/remove-background", { imagePath }),
+    api.post(
+      "/api/image-editor/remove-background",
+      {
+        imagePath,
+      }
+    ),
 
-  replaceBackground: (imagePath, color = "#ffffff") =>
-    api.post("/api/image-editor/replace-background", { imagePath, color }),
+  // ----------------------------------------------------------
+  // REPLACE BACKGROUND
+  // ----------------------------------------------------------
 
-  // ============================================
-  // NEW — BACKGROUND BLUR / FACE GLOW / HAIRSTYLES
-  // ============================================
+  replaceBackground: (
+    imagePath,
+    color = "#ffffff"
+  ) =>
+    api.post(
+      "/api/image-editor/replace-background",
+      {
+        imagePath,
+        color,
+      }
+    ),
 
-  backgroundBlur: (imagePath, intensity = "medium") =>
-    api.post("/api/image-editor/background-blur", { imagePath, intensity }),
+  // ----------------------------------------------------------
+  // BACKGROUND BLUR
+  // ----------------------------------------------------------
 
-  applyHairstyle: (imagePath, style) =>
-    api.post("/api/image-editor/hairstyle", { imagePath, style }),
+  backgroundBlur: (
+    imagePath,
+    intensity = "medium"
+  ) =>
+    api.post(
+      "/api/image-editor/background-blur",
+      {
+        imagePath,
+        intensity,
+      }
+    ),
 
-  getHairstyles: () => api.get("/api/image-editor/hairstyles"),
+  // ----------------------------------------------------------
+  // HAIRSTYLE API KEPT FOR BACKEND COMPATIBILITY
+  // UI WILL NOT USE THIS FOR FREE STYLES
+  // ----------------------------------------------------------
 
-  aiEditImage: (imagePath, instruction) =>
-    api.post("/api/image-editor/ai-edit", { imagePath, instruction }),
+  applyHairstyle: (
+    imagePath,
+    style
+  ) =>
+    api.post(
+      "/api/image-editor/hairstyle",
+      {
+        imagePath,
+        style,
+      }
+    ),
 
-  compareImage: (imagePath, editType = "enhance") =>
-    api.post("/api/image-editor/compare", { imagePath, editType }),
+  getHairstyles: () =>
+    api.get(
+      "/api/image-editor/hairstyles"
+    ),
+
+  // ----------------------------------------------------------
+  // AI EDIT — PRESERVED
+  // ----------------------------------------------------------
+
+  aiEditImage: (
+    imagePath,
+    instruction
+  ) =>
+    api.post(
+      "/api/image-editor/ai-edit",
+      {
+        imagePath,
+        instruction,
+      }
+    ),
+
+  // ----------------------------------------------------------
+  // COMPARE
+  // ----------------------------------------------------------
+
+  compareImage: (
+    imagePath,
+    editType = "enhance"
+  ) =>
+    api.post(
+      "/api/image-editor/compare",
+      {
+        imagePath,
+        editType,
+      }
+    ),
+
+  // ----------------------------------------------------------
+  // RESET
+  // ----------------------------------------------------------
 
   resetImage: (imagePath) =>
-    api.post("/api/image-editor/reset", { imagePath }),
+    api.post(
+      "/api/image-editor/reset",
+      {
+        imagePath,
+      }
+    ),
+
+  // ----------------------------------------------------------
+  // DOWNLOAD
+  // ----------------------------------------------------------
 
   downloadUrl: buildDownloadUrl,
 };
 
 export default apiService;
-export { api, API_BASE_URL };
+
+export {
+  api,
+  API_BASE_URL,
+};
+```
