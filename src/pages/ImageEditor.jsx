@@ -57,6 +57,26 @@ const AI_SUGGESTIONS = [
   "cinematic bana do",
 ];
 
+const HAIRSTYLES = [
+  { id: "original", label: "Original", icon: "🧑" },
+  { id: "short-hair", label: "Short Hair", icon: "💈" },
+  { id: "side-part", label: "Side Part", icon: "💇" },
+  { id: "classic", label: "Classic", icon: "🎩" },
+  { id: "crew-cut", label: "Crew Cut", icon: "✂️" },
+  { id: "textured", label: "Textured", icon: "🌾" },
+  { id: "wavy", label: "Wavy", icon: "🌊" },
+  { id: "curly", label: "Curly", icon: "🌀" },
+  { id: "slick-back", label: "Slick Back", icon: "💼" },
+  { id: "undercut", label: "Undercut", icon: "🪒" },
+  { id: "fade", label: "Fade", icon: "🕶️" },
+  { id: "fringe", label: "Fringe", icon: " bangs" },
+  { id: "buzz-cut", label: "Buzz Cut", icon: "🦲" },
+  { id: "long-hair", label: "Long Hair", icon: "💁" },
+  { id: "messy", label: "Messy Style", icon: "🌪️" },
+];
+
+const BG_BLUR_LEVELS = ["low", "medium", "high"];
+
 const ALLOWED_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB client-side (server allows 20MB)
 
@@ -407,6 +427,87 @@ function ImageEditor() {
     [runOperation, applyFilter]
   );
 
+{/* BACKGROUND BLUR */}
+            <div className="tool-section">
+              <h3>Background Blur</h3>
+              <div className="quick-actions-grid">
+                {BG_BLUR_LEVELS.map((level) => (
+                  <button
+                    key={level}
+                    className="quick-action-btn"
+                    onClick={() => handleBackgroundBlur(level)}
+                    disabled={isProcessing || !currentPath}
+                  >
+                    <span className="action-label" style={{ textTransform: "capitalize" }}>
+                      {level}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* HAIRSTYLES — AI (requires OPENAI_API_KEY) */}
+            <div className="tool-section">
+              <h3>Hairstyles (AI)</h3>
+              <div className="filter-grid">
+                {HAIRSTYLES.map((hs) => (
+                  <button
+                    key={hs.id}
+                    className="filter-btn"
+                    onClick={() => handleHairstyle(hs.id)}
+                    disabled={isProcessing || !currentPath}
+                    title={hs.label}
+                  >
+                    <span className="filter-icon">{hs.icon}</span>
+                    <span className="filter-label">{hs.label}</span>
+                  </button>
+                ))}
+              </div>
+              <p style={{ fontSize: "0.7rem", color: "#888", marginTop: "6px" }}>
+                Hairstyle previews OpenAI (gpt-image-1) se generate hote hain. Key na hone
+                par clear error milega — fake result kabhi nahi.
+              </p>
+            </div>
+
+
+// ============================================
+  // BACKGROUND BLUR
+  // ============================================
+  const [blurIntensity, setBlurIntensity] = useState("medium");
+
+  const handleBackgroundBlur = useCallback(
+    (intensity) => {
+      const path = currentPathRef.current;
+      if (!path) return;
+      setBlurIntensity(intensity);
+      runOperation(
+        `Blurring background (${intensity})...`,
+        () => apiService.backgroundBlur(path, intensity),
+        "bg-blur"
+      );
+    },
+    [runOperation]
+  );
+
+  // ============================================
+  // HAIRSTYLE PREVIEW — AI only (needs OPENAI_API_KEY)
+  // ============================================
+  const handleHairstyle = useCallback(
+    (styleId) => {
+      const path = currentPathRef.current;
+      if (!path) return;
+      if (styleId === "original") {
+        handleReset();
+        return;
+      }
+      runOperation(`Applying hairstyle: ${styleId}...`, () =>
+        apiService.applyHairstyle(path, styleId), "hairstyle"
+      );
+    },
+    [runOperation, handleReset]
+  );
+
+
   // ============================================
   // AI EDIT — natural language (Hindi/Hinglish/English), multi-step
   // ============================================
@@ -665,6 +766,25 @@ function ImageEditor() {
 
             {/* QUICK ACTIONS */}
             <div className="tool-section">
+
+             {/* HAIRSTYLES — AI */}
+<div className="tool-section">
+  <h3>Hairstyles (AI)</h3>
+  <div className="filter-grid">
+    {HAIRSTYLES.map((hs) => (
+      <button
+        key={hs.id}
+        className="filter-btn"
+        onClick={() => handleHairstyle(hs.id)}
+        disabled={isProcessing || !currentPath}
+      >
+        <span className="filter-icon">{hs.icon}</span>
+        <span className="filter-label">{hs.label}</span>
+      </button>
+    ))}
+  </div>
+</div>
+
               <h3>Quick Actions</h3>
               <div className="quick-actions-grid">
                 {QUICK_ACTIONS.map((action) => (
