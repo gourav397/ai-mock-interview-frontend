@@ -199,6 +199,18 @@ const apiService = {
   replaceBackground: (imagePath, color = "#ffffff") =>
     api.post("/api/image-editor/replace-background", { imagePath, color }),
 
+  // ============================================
+  // NEW — BACKGROUND BLUR / FACE GLOW / HAIRSTYLES
+  // ============================================
+
+  backgroundBlur: (imagePath, intensity = "medium") =>
+    api.post("/api/image-editor/background-blur", { imagePath, intensity }),
+
+  applyHairstyle: (imagePath, style) =>
+    api.post("/api/image-editor/hairstyle", { imagePath, style }),
+
+  getHairstyles: () => api.get("/api/image-editor/hairstyles"),
+
   aiEditImage: (imagePath, instruction) =>
     api.post("/api/image-editor/ai-edit", { imagePath, instruction }),
 

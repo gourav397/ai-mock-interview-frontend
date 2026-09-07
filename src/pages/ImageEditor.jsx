@@ -35,6 +35,8 @@ const FILTERS = [
   { id: "soft", label: "Soft", icon: "💫" },
   { id: "vivid", label: "Vivid", icon: "🌈" },
   { id: "dramatic", label: "Dramatic", icon: "🎭" },
+  { id: "face-glow", label: "Face Glow", icon: "✨" },
+  { id: "portrait-enhance", label: "Portrait Enhance", icon: "💎" },
 ];
 
 const QUICK_ACTIONS = [
