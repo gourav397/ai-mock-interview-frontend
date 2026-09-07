@@ -766,25 +766,6 @@ function ImageEditor() {
 
             {/* QUICK ACTIONS */}
             <div className="tool-section">
-
-             {/* HAIRSTYLES — AI */}
-<div className="tool-section">
-  <h3>Hairstyles (AI)</h3>
-  <div className="filter-grid">
-    {HAIRSTYLES.map((hs) => (
-      <button
-        key={hs.id}
-        className="filter-btn"
-        onClick={() => handleHairstyle(hs.id)}
-        disabled={isProcessing || !currentPath}
-      >
-        <span className="filter-icon">{hs.icon}</span>
-        <span className="filter-label">{hs.label}</span>
-      </button>
-    ))}
-  </div>
-</div>
-
               <h3>Quick Actions</h3>
               <div className="quick-actions-grid">
                 {QUICK_ACTIONS.map((action) => (
@@ -800,6 +781,26 @@ function ImageEditor() {
                 ))}
               </div>
             </div>
+
+            {/* HAIRSTYLES — AI */}
+<div className="tool-section">
+  <h3>Hairstyles (AI)</h3>
+
+  <div className="filter-grid">
+    {HAIRSTYLES.map((hs) => (
+      <button
+        key={hs.id}
+        className="filter-btn"
+        onClick={() => handleHairstyle(hs.id)}
+        disabled={isProcessing || !currentPath}
+        title={hs.label}
+      >
+        <span className="filter-icon">{hs.icon}</span>
+        <span className="filter-label">{hs.label}</span>
+      </button>
+    ))}
+  </div>
+</div>
 
             {/* AI EDIT */}
             <div className="tool-section">
