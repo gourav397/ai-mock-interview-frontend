@@ -1,22 +1,25 @@
 // ============================================================
-// AI IMAGE EDITOR — PRODUCTION v4.1
-// Result preview uses ONE canonical URL builder (apiService.buildPreviewUrl)
-// built from a safely extracted basename — never raw `path`, never blob,
-// never double-prepended base URL.
-// AI Edit supports Hindi/Hinglish/English + multi-step commands.
+// AI IMAGE EDITOR — PRODUCTION v4.2
 // ============================================================
 
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+} from "react";
+
 import apiService from "../services/api";
 import "./ImageEditor.css";
 
 // ============================================
-// DEBUG — set to false after confirming the fix in production
+// DEBUG
 // ============================================
+
 const DEBUG_IMAGE_EDIT = true;
 
 // ============================================
-// FILTERS CONFIGURATION (ids match backend FILTER_PRESETS)
+// FILTERS
 // ============================================
 
 const FILTERS = [
@@ -39,6 +42,10 @@ const FILTERS = [
   { id: "portrait-enhance", label: "Portrait Enhance", icon: "💎" },
 ];
 
+// ============================================
+// QUICK ACTIONS
+// ============================================
+
 const QUICK_ACTIONS = [
   { id: "enhance", label: "Enhance", icon: "✨" },
   { id: "upscale", label: "2x Upscale", icon: "🔍" },
@@ -48,6 +55,10 @@ const QUICK_ACTIONS = [
   { id: "vintage_q", label: "Vintage", icon: "📷" },
 ];
 
+// ============================================
+// AI SUGGESTIONS
+// ============================================
+
 const AI_SUGGESTIONS = [
   "background hata do",
   "HD kar do",
@@ -56,6 +67,10 @@ const AI_SUGGESTIONS = [
   "vintage look do",
   "cinematic bana do",
 ];
+
+// ============================================
+// HAIRSTYLES
+// ============================================
 
 const HAIRSTYLES = [
   { id: "original", label: "Original", icon: "🧑" },
@@ -69,48 +84,98 @@ const HAIRSTYLES = [
   { id: "slick-back", label: "Slick Back", icon: "💼" },
   { id: "undercut", label: "Undercut", icon: "🪒" },
   { id: "fade", label: "Fade", icon: "🕶️" },
-  { id: "fringe", label: "Fringe", icon: " bangs" },
+  { id: "fringe", label: "Fringe", icon: "💇" },
   { id: "buzz-cut", label: "Buzz Cut", icon: "🦲" },
   { id: "long-hair", label: "Long Hair", icon: "💁" },
   { id: "messy", label: "Messy Style", icon: "🌪️" },
 ];
 
+// ============================================
+// BACKGROUND BLUR
+// ============================================
+
 const BG_BLUR_LEVELS = ["low", "medium", "high"];
 
-const ALLOWED_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB client-side (server allows 20MB)
+// ============================================
+// FILE SETTINGS
+// ============================================
+
+const ALLOWED_TYPES = [
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+];
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 // ============================================
-// IMAGE EDITOR COMPONENT
+// COMPONENT
 // ============================================
 
 function ImageEditor() {
-  const [originalUrl, setOriginalUrl] = useState(null); // local blob preview (original ONLY)
-  const [originalPath, setOriginalPath] = useState(null); // server filename of ORIGINAL
-  const [currentPath, setCurrentPath] = useState(null); // server filename of latest edit
+  // ==========================================
+  // IMAGE STATE
+  // ==========================================
 
-  const [resultUrl, setResultUrl] = useState(null); // canonical backend preview URL
-  const [resultLoadError, setResultLoadError] = useState(false); // React-state based, no DOM hacks
+  const [originalUrl, setOriginalUrl] = useState(null);
+  const [originalPath, setOriginalPath] = useState(null);
+  const [currentPath, setCurrentPath] = useState(null);
+
+  const [resultUrl, setResultUrl] = useState(null);
+  const [resultLoadError, setResultLoadError] = useState(false);
+
   const [metadata, setMetadata] = useState(null);
+
+  // ==========================================
+  // EDIT STATE
+  // ==========================================
+
   const [activeFilter, setActiveFilter] = useState(null);
+
   const [adjustments, setAdjustments] = useState({
     brightness: 1,
     contrast: 1,
     saturation: 1,
   });
+
+  const [blurIntensity, setBlurIntensity] = useState("medium");
+
   const [aiInstruction, setAiInstruction] = useState("");
-  const [imageState, setImageState] = useState("empty"); // empty | loaded | error
+
+  // ==========================================
+  // UI STATE
+  // ==========================================
+
+  const [imageState, setImageState] = useState("empty");
+
   const [isProcessing, setIsProcessing] = useState(false);
+
   const [errorMessage, setErrorMessage] = useState(null);
+
   const [successMessage, setSuccessMessage] = useState(null);
+
   const [dragOver, setDragOver] = useState(false);
+
   const [processingMessage, setProcessingMessage] = useState("");
 
+  // ==========================================
+  // REFS
+  // ==========================================
+
   const fileInputRef = useRef(null);
+
   const adjustTimerRef = useRef(null);
+
   const currentPathRef = useRef(null);
+
   const blobUrlRef = useRef(null);
+
   const isProcessingRef = useRef(false);
+
+  // ==========================================
+  // KEEP REFS UPDATED
+  // ==========================================
 
   useEffect(() => {
     currentPathRef.current = currentPath;
@@ -120,91 +185,130 @@ function ImageEditor() {
     isProcessingRef.current = isProcessing;
   }, [isProcessing]);
 
-  // ============================================
-  // CLEANUP ON UNMOUNT
-  // ============================================
+  // ==========================================
+  // CLEANUP
+  // ==========================================
+
   useEffect(() => {
     return () => {
       if (blobUrlRef.current) {
         URL.revokeObjectURL(blobUrlRef.current);
       }
+
       if (adjustTimerRef.current) {
         clearTimeout(adjustTimerRef.current);
       }
     };
   }, []);
 
-  // ============================================
-  // COMMON: handle API responses
-  // Establishes the single consistent contract:
-  //   response.data.data → { preview | resultUrl | path | filename }
-  //   → safely resolved basename → canonical preview URL
-  // ============================================
-  const applyResult = useCallback((responseData, context = "operation") => {
-    if (!responseData?.success) {
-      throw new Error(responseData?.message || "Operation failed.");
-    }
+  // ==========================================
+  // APPLY RESULT
+  // ==========================================
 
-    const d = responseData.data || responseData;
+  const applyResult = useCallback(
+    (responseData, context = "operation") => {
+      if (!responseData?.success) {
+        throw new Error(
+          responseData?.message || "Operation failed."
+        );
+      }
 
-    // Resolve filename from ANY response format (see api.js)
-    const filename = apiService.resolveImageFilename(d);
+      const d = responseData.data || responseData;
 
-    if (DEBUG_IMAGE_EDIT) {
-      console.log(`[IMAGE EDIT RESULT] (${context})`, {
-        responseData: responseData,
-        filename: filename,
-        preview: d.preview,
-        resultUrl: d.resultUrl,
-        path: d.path,
-        finalPreviewUrl: filename ? apiService.buildPreviewUrl(filename) : null,
-      });
-    }
+      const filename = apiService.resolveImageFilename(d);
 
-    if (!filename) {
-      throw new Error(
-        "Backend ne valid image filename return nahi kiya. Deploy latest backend and retry."
+      if (DEBUG_IMAGE_EDIT) {
+        console.log(
+          `[IMAGE EDIT RESULT] (${context})`,
+          {
+            responseData,
+            filename,
+            preview: d.preview,
+            resultUrl: d.resultUrl,
+            path: d.path,
+            finalPreviewUrl: filename
+              ? apiService.buildPreviewUrl(filename)
+              : null,
+          }
+        );
+      }
+
+      if (!filename) {
+        throw new Error(
+          "Backend ne valid image filename return nahi kiya. Deploy latest backend and retry."
+        );
+      }
+
+      setCurrentPath(filename);
+
+      setResultUrl(
+        apiService.buildPreviewUrl(filename)
       );
-    }
 
-    // currentPath always points to the LATEST successful result
-    setCurrentPath(filename);
+      setResultLoadError(false);
 
-    // Edited Result uses ONLY the canonical backend preview URL
-    // (never blob, never original URL, never constructed from raw path)
-    setResultUrl(apiService.buildPreviewUrl(filename));
-    setResultLoadError(false);
+      if (d.width && d.height) {
+        setMetadata((prev) => ({
+          ...(prev || {}),
+          width: d.width,
+          height: d.height,
+          format:
+            d.format ||
+            prev?.format ||
+            "jpeg",
+        }));
+      }
 
-    if (d.width && d.height) {
-      setMetadata((prev) => ({
-        ...(prev || {}),
-        width: d.width,
-        height: d.height,
-        format: d.format || (prev && prev.format) || "jpeg",
-      }));
-    }
+      setSuccessMessage(
+        responseData.message || null
+      );
 
-    setSuccessMessage(responseData.message || null);
-    setImageState("loaded");
-  }, []);
+      setImageState("loaded");
+    },
+    []
+  );
+
+  // ==========================================
+  // COMMON OPERATION RUNNER
+  // ==========================================
 
   const runOperation = useCallback(
-    async (message, fn, context, onError) => {
-      // Prevent duplicate/parallel requests
-      if (isProcessingRef.current) return;
+    async (
+      message,
+      fn,
+      context,
+      onError
+    ) => {
+      if (isProcessingRef.current) {
+        return;
+      }
 
       setIsProcessing(true);
       setErrorMessage(null);
       setSuccessMessage(null);
       setProcessingMessage(message);
+
       try {
         const response = await fn();
-        applyResult(response.data, context);
+
+        applyResult(
+          response.data,
+          context
+        );
       } catch (err) {
-        console.error(`[ImageEditor] ${context} error:`, err.message);
-        // On failure: current image + previous result are PRESERVED
-        setErrorMessage(err.message || "Operation failed.");
-        if (onError) onError();
+        console.error(
+          `[ImageEditor] ${context} error:`,
+          err
+        );
+
+        setErrorMessage(
+          err.message ||
+            "Operation failed."
+        );
+
+        if (onError) {
+          onError();
+        }
       } finally {
         setIsProcessing(false);
         setProcessingMessage("");
@@ -213,94 +317,203 @@ function ImageEditor() {
     [applyResult]
   );
 
-  // ============================================
+  // ==========================================
   // FILE VALIDATION
-  // ============================================
-  const validateFile = useCallback((file) => {
-    if (!file) throw new Error("No file selected.");
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      throw new Error(
-        `Invalid file type: ${file.type || "unknown"}. Allowed: JPG, PNG, WebP.`
-      );
-    }
-    if (file.size > MAX_FILE_SIZE) {
-      const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
-      throw new Error(`File too large (${sizeMB}MB). Maximum is 10MB.`);
-    }
-    return true;
-  }, []);
+  // ==========================================
 
-  // ============================================
-  // HANDLE FILE SELECTION / UPLOAD
-  // ============================================
+  const validateFile = useCallback(
+    (file) => {
+      if (!file) {
+        throw new Error(
+          "No file selected."
+        );
+      }
+
+      if (
+        !ALLOWED_TYPES.includes(
+          file.type
+        )
+      ) {
+        throw new Error(
+          `Invalid file type: ${
+            file.type || "unknown"
+          }. Allowed: JPG, PNG, WebP.`
+        );
+      }
+
+      if (
+        file.size > MAX_FILE_SIZE
+      ) {
+        const sizeMB = (
+          file.size /
+          (1024 * 1024)
+        ).toFixed(1);
+
+        throw new Error(
+          `File too large (${sizeMB}MB). Maximum is 10MB.`
+        );
+      }
+
+      return true;
+    },
+    []
+  );
+
+  // ==========================================
+  // UPLOAD IMAGE
+  // ==========================================
+
   const handleFile = useCallback(
     async (file) => {
-      if (isProcessingRef.current) return;
+      if (
+        isProcessingRef.current
+      ) {
+        return;
+      }
+
       setErrorMessage(null);
+
       try {
         validateFile(file);
       } catch (err) {
-        setErrorMessage(err.message);
+        setErrorMessage(
+          err.message
+        );
         return;
       }
 
       setIsProcessing(true);
-      setProcessingMessage("Uploading image...");
+
+      setProcessingMessage(
+        "Uploading image..."
+      );
+
       setResultUrl(null);
       setResultLoadError(false);
+
       setSuccessMessage(null);
+
       setActiveFilter(null);
-      setAdjustments({ brightness: 1, contrast: 1, saturation: 1 });
+
+      setAdjustments({
+        brightness: 1,
+        contrast: 1,
+        saturation: 1,
+      });
+
       setAiInstruction("");
 
-      // Local blob preview for the ORIGINAL image only
-      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
-      const localUrl = URL.createObjectURL(file);
-      blobUrlRef.current = localUrl;
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(
+          blobUrlRef.current
+        );
+      }
+
+      const localUrl =
+        URL.createObjectURL(file);
+
+      blobUrlRef.current =
+        localUrl;
+
       setOriginalUrl(localUrl);
 
       try {
-        const response = await apiService.uploadImage(file);
-        const responseData = response.data;
+        const response =
+          await apiService.uploadImage(
+            file
+          );
 
-        if (!responseData.success) {
-          throw new Error(responseData.message || "Upload failed.");
+        const responseData =
+          response.data;
+
+        if (
+          !responseData.success
+        ) {
+          throw new Error(
+            responseData.message ||
+              "Upload failed."
+          );
         }
 
-        const d = responseData.data || responseData;
-        // Use the same safe resolution (old backends may return a full path)
+        const d =
+          responseData.data ||
+          responseData;
+
         const filename =
-          apiService.resolveImageFilename(d) ||
-          apiService.extractBasename(d.path);
+          apiService.resolveImageFilename(
+            d
+          ) ||
+          apiService.extractBasename(
+            d.path
+          );
 
         if (DEBUG_IMAGE_EDIT) {
-          console.log("[IMAGE EDIT RESULT] (upload)", {
-            responseData,
-            filename,
-            finalPreviewUrl: filename ? apiService.buildPreviewUrl(filename) : null,
-          });
+          console.log(
+            "[IMAGE EDIT RESULT] (upload)",
+            {
+              responseData,
+              filename,
+              finalPreviewUrl:
+                filename
+                  ? apiService.buildPreviewUrl(
+                      filename
+                    )
+                  : null,
+            }
+          );
         }
 
         if (!filename) {
-          throw new Error("Upload succeeded but server returned no valid filename.");
+          throw new Error(
+            "Upload succeeded but server returned no valid filename."
+          );
         }
 
-        setOriginalPath(filename);
-        setCurrentPath(filename);
-        setResultUrl(apiService.buildPreviewUrl(filename));
+        setOriginalPath(
+          filename
+        );
+
+        setCurrentPath(
+          filename
+        );
+
+        setResultUrl(
+          apiService.buildPreviewUrl(
+            filename
+          )
+        );
+
         setResultLoadError(false);
+
         setMetadata({
           width: d.width,
           height: d.height,
           format: d.format,
           size: d.size,
         });
-        setImageState("loaded");
-        setSuccessMessage("Image uploaded. Start editing!");
+
+        setImageState(
+          "loaded"
+        );
+
+        setSuccessMessage(
+          "Image uploaded. Start editing!"
+        );
       } catch (err) {
-        console.error("[ImageEditor] Upload error:", err);
-        setImageState("error");
-        setErrorMessage(err.message || "Failed to upload image.");
+        console.error(
+          "[ImageEditor] Upload error:",
+          err
+        );
+
+        setImageState(
+          "error"
+        );
+
+        setErrorMessage(
+          err.message ||
+            "Failed to upload image."
+        );
+
         setOriginalUrl(null);
         setOriginalPath(null);
         setCurrentPath(null);
@@ -312,358 +525,632 @@ function ImageEditor() {
     [validateFile]
   );
 
-  // ============================================
-  // FILE INPUT + DRAG AND DROP
-  // ============================================
-  const handleFileInput = useCallback(
-    (e) => {
-      const file = e.target.files?.[0];
-      if (file) handleFile(file);
-      e.target.value = "";
-    },
-    [handleFile]
-  );
+  // ==========================================
+  // FILE INPUT
+  // ==========================================
 
-  const handleDrop = useCallback(
-    (e) => {
+  const handleFileInput =
+    useCallback(
+      (e) => {
+        const file =
+          e.target.files?.[0];
+
+        if (file) {
+          handleFile(file);
+        }
+
+        e.target.value = "";
+      },
+      [handleFile]
+    );
+
+  // ==========================================
+  // DRAG & DROP
+  // ==========================================
+
+  const handleDrop =
+    useCallback(
+      (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        setDragOver(false);
+
+        const file =
+          e.dataTransfer?.files?.[0];
+
+        if (file) {
+          handleFile(file);
+        }
+      },
+      [handleFile]
+    );
+
+  const handleDragOver =
+    useCallback((e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragOver(true);
+    }, []);
+
+  const handleDragLeave =
+    useCallback((e) => {
       e.preventDefault();
       e.stopPropagation();
       setDragOver(false);
-      const file = e.dataTransfer?.files?.[0];
-      if (file) handleFile(file);
-    },
-    [handleFile]
-  );
+    }, []);
 
-  const handleDragOver = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(false);
-  }, []);
-
-  // ============================================
+  // ==========================================
   // APPLY FILTER
-  // ============================================
-  const applyFilter = useCallback(
-    (filterId) => {
-      if (!currentPathRef.current) return;
-      runOperation(
-        `Applying ${filterId} filter...`,
-        () => apiService.applyFilter(currentPathRef.current, filterId),
-        `filter:${filterId}`,
-        () => setActiveFilter(null)
-      );
-      setActiveFilter(filterId);
-    },
-    [runOperation]
-  );
+  // ==========================================
 
-  // ============================================
-  // APPLY ADJUSTMENTS — debounced (600ms after slider stops)
-  // ============================================
-  const applyAdjustmentsNow = useCallback(
-    (adj) => {
-      const path = currentPathRef.current;
-      if (!path) return;
-      runOperation(
-        "Applying adjustments...",
-        () => apiService.applyAdjustments(path, adj),
-        "adjust"
-      );
-    },
-    [runOperation]
-  );
+  const applyFilter =
+    useCallback(
+      (filterId) => {
+        const path =
+          currentPathRef.current;
 
-  const handleAdjustmentChange = useCallback(
-    (key, value) => {
-      const newAdjustments = { ...adjustments, [key]: parseFloat(value) };
-      setAdjustments(newAdjustments);
+        if (!path) {
+          return;
+        }
 
-      if (adjustTimerRef.current) clearTimeout(adjustTimerRef.current);
-      adjustTimerRef.current = setTimeout(() => {
-        applyAdjustmentsNow(newAdjustments);
-      }, 600);
-    },
-    [adjustments, applyAdjustmentsNow]
-  );
+        runOperation(
+          `Applying ${filterId} filter...`,
+          () =>
+            apiService.applyFilter(
+              path,
+              filterId
+            ),
+          `filter:${filterId}`,
+          () =>
+            setActiveFilter(null)
+        );
 
-  // ============================================
+        setActiveFilter(
+          filterId
+        );
+      },
+      [runOperation]
+    );
+
+  // ==========================================
+  // APPLY ADJUSTMENTS
+  // ==========================================
+
+  const applyAdjustmentsNow =
+    useCallback(
+      (adj) => {
+        const path =
+          currentPathRef.current;
+
+        if (!path) {
+          return;
+        }
+
+        runOperation(
+          "Applying adjustments...",
+          () =>
+            apiService.applyAdjustments(
+              path,
+              adj
+            ),
+          "adjust"
+        );
+      },
+      [runOperation]
+    );
+
+  const handleAdjustmentChange =
+    useCallback(
+      (key, value) => {
+        const newAdjustments = {
+          ...adjustments,
+          [key]: parseFloat(value),
+        };
+
+        setAdjustments(
+          newAdjustments
+        );
+
+        if (
+          adjustTimerRef.current
+        ) {
+          clearTimeout(
+            adjustTimerRef.current
+          );
+        }
+
+        adjustTimerRef.current =
+          setTimeout(() => {
+            applyAdjustmentsNow(
+              newAdjustments
+            );
+          }, 600);
+      },
+      [
+        adjustments,
+        applyAdjustmentsNow,
+      ]
+    );
+
+  // ==========================================
   // QUICK ACTIONS
-  // ============================================
-  const handleQuickAction = useCallback(
-    (actionId) => {
-      const path = currentPathRef.current;
-      if (!path) return;
+  // ==========================================
 
-      switch (actionId) {
-        case "enhance":
-          runOperation("Enhancing image...", () => apiService.enhanceImage(path), "enhance");
-          break;
-        case "upscale":
-          runOperation("Upscaling image 2x...", () => apiService.upscaleImage(path, 2), "upscale");
-          break;
-        case "removeBg":
-          runOperation("Removing background...", () => apiService.removeBackground(path), "removeBg");
-          break;
-        case "bw_q":
-          applyFilter("bw");
-          break;
-        case "warm_q":
-          applyFilter("warm");
-          break;
-        case "vintage_q":
-          applyFilter("vintage");
-          break;
-        default:
-          setErrorMessage(`Unknown action: ${actionId}`);
-      }
-    },
-    [runOperation, applyFilter]
-  );
+  const handleQuickAction =
+    useCallback(
+      (actionId) => {
+        const path =
+          currentPathRef.current;
 
-{/* BACKGROUND BLUR */}
-            <div className="tool-section">
-              <h3>Background Blur</h3>
-              <div className="quick-actions-grid">
-                {BG_BLUR_LEVELS.map((level) => (
-                  <button
-                    key={level}
-                    className="quick-action-btn"
-                    onClick={() => handleBackgroundBlur(level)}
-                    disabled={isProcessing || !currentPath}
-                  >
-                    <span className="action-label" style={{ textTransform: "capitalize" }}>
-                      {level}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
+        if (!path) {
+          return;
+        }
 
-            {/* HAIRSTYLES — AI (requires OPENAI_API_KEY) */}
-            <div className="tool-section">
-              <h3>Hairstyles (AI)</h3>
-              <div className="filter-grid">
-                {HAIRSTYLES.map((hs) => (
-                  <button
-                    key={hs.id}
-                    className="filter-btn"
-                    onClick={() => handleHairstyle(hs.id)}
-                    disabled={isProcessing || !currentPath}
-                    title={hs.label}
-                  >
-                    <span className="filter-icon">{hs.icon}</span>
-                    <span className="filter-label">{hs.label}</span>
-                  </button>
-                ))}
-              </div>
-              <p style={{ fontSize: "0.7rem", color: "#888", marginTop: "6px" }}>
-                Hairstyle previews OpenAI (gpt-image-1) se generate hote hain. Key na hone
-                par clear error milega — fake result kabhi nahi.
-              </p>
-            </div>
+        switch (actionId) {
+          case "enhance":
+            runOperation(
+              "Enhancing image...",
+              () =>
+                apiService.enhanceImage(
+                  path
+                ),
+              "enhance"
+            );
+            break;
 
+          case "upscale":
+            runOperation(
+              "Upscaling image 2x...",
+              () =>
+                apiService.upscaleImage(
+                  path,
+                  2
+                ),
+              "upscale"
+            );
+            break;
 
-// ============================================
+          case "removeBg":
+            runOperation(
+              "Removing background...",
+              () =>
+                apiService.removeBackground(
+                  path
+                ),
+              "removeBg"
+            );
+            break;
+
+          case "bw_q":
+            applyFilter("bw");
+            break;
+
+          case "warm_q":
+            applyFilter("warm");
+            break;
+
+          case "vintage_q":
+            applyFilter("vintage");
+            break;
+
+          default:
+            setErrorMessage(
+              `Unknown action: ${actionId}`
+            );
+        }
+      },
+      [
+        runOperation,
+        applyFilter,
+      ]
+    );
+
+  // ==========================================
   // BACKGROUND BLUR
-  // ============================================
-  const [blurIntensity, setBlurIntensity] = useState("medium");
+  // ==========================================
 
-  const handleBackgroundBlur = useCallback(
-    (intensity) => {
-      const path = currentPathRef.current;
-      if (!path) return;
-      setBlurIntensity(intensity);
-      runOperation(
-        `Blurring background (${intensity})...`,
-        () => apiService.backgroundBlur(path, intensity),
-        "bg-blur"
-      );
-    },
-    [runOperation]
-  );
+  const handleBackgroundBlur =
+    useCallback(
+      (intensity) => {
+        const path =
+          currentPathRef.current;
 
-  // ============================================
-  // HAIRSTYLE PREVIEW — AI only (needs OPENAI_API_KEY)
-  // ============================================
-  const handleHairstyle = useCallback(
-    (styleId) => {
-      const path = currentPathRef.current;
-      if (!path) return;
-      if (styleId === "original") {
-        handleReset();
+        if (!path) {
+          return;
+        }
+
+        setBlurIntensity(
+          intensity
+        );
+
+        runOperation(
+          `Blurring background (${intensity})...`,
+          () =>
+            apiService.backgroundBlur(
+              path,
+              intensity
+            ),
+          "bg-blur"
+        );
+      },
+      [runOperation]
+    );
+
+  // ==========================================
+  // RESET TO ORIGINAL
+  //
+  // IMPORTANT:
+  // This is BEFORE handleHairstyle
+  // ==========================================
+
+  const handleReset =
+    useCallback(() => {
+      if (!originalPath) {
         return;
       }
-      runOperation(`Applying hairstyle: ${styleId}...`, () =>
-        apiService.applyHairstyle(path, styleId), "hairstyle"
+
+      setCurrentPath(
+        originalPath
       );
-    },
-    [runOperation, handleReset]
-  );
 
-
-  // ============================================
-  // AI EDIT — natural language (Hindi/Hinglish/English), multi-step
-  // ============================================
-  const handleAiEdit = useCallback(
-    (instruction) => {
-      const path = currentPathRef.current;
-      if (!path || !instruction.trim()) return;
-      runOperation(
-        `AI editing: "${instruction.trim()}"...`,
-        () => apiService.aiEditImage(path, instruction.trim()),
-        "ai-edit"
+      setResultUrl(
+        apiService.buildPreviewUrl(
+          originalPath
+        )
       );
-    },
-    [runOperation]
-  );
 
-  const handleAiEditSubmit = useCallback(
-    (e) => {
-      e.preventDefault();
-      handleAiEdit(aiInstruction);
-    },
-    [aiInstruction, handleAiEdit]
-  );
+      setResultLoadError(false);
 
-  // ============================================
-  // RESET — revert to original upload (original is never overwritten)
-  // ============================================
-  const handleReset = useCallback(() => {
-    if (!originalPath) return;
-    setCurrentPath(originalPath);
-    setResultUrl(null);
-    setResultLoadError(false);
-    setActiveFilter(null);
-    setAdjustments({ brightness: 1, contrast: 1, saturation: 1 });
-    setErrorMessage(null);
-    setSuccessMessage("Reset to original image.");
-  }, [originalPath]);
+      setActiveFilter(null);
 
-  // ============================================
+      setAdjustments({
+        brightness: 1,
+        contrast: 1,
+        saturation: 1,
+      });
+
+      setErrorMessage(null);
+
+      setSuccessMessage(
+        "Reset to original image."
+      );
+    }, [originalPath]);
+
+  // ==========================================
+  // HAIRSTYLE PREVIEW — AI
+  // ==========================================
+
+  const handleHairstyle =
+    useCallback(
+      (styleId) => {
+        const path =
+          currentPathRef.current;
+
+        if (!path) {
+          return;
+        }
+
+        // Original button
+        if (
+          styleId === "original"
+        ) {
+          handleReset();
+          return;
+        }
+
+        runOperation(
+          `Applying hairstyle: ${styleId}...`,
+          () =>
+            apiService.applyHairstyle(
+              path,
+              styleId
+            ),
+          "hairstyle"
+        );
+      },
+      [
+        runOperation,
+        handleReset,
+      ]
+    );
+
+  // ==========================================
+  // AI EDIT
+  // ==========================================
+
+  const handleAiEdit =
+    useCallback(
+      (instruction) => {
+        const path =
+          currentPathRef.current;
+
+        if (
+          !path ||
+          !instruction.trim()
+        ) {
+          return;
+        }
+
+        runOperation(
+          `AI editing: "${instruction.trim()}"...`,
+          () =>
+            apiService.aiEditImage(
+              path,
+              instruction.trim()
+            ),
+          "ai-edit"
+        );
+      },
+      [runOperation]
+    );
+
+  const handleAiEditSubmit =
+    useCallback(
+      (e) => {
+        e.preventDefault();
+
+        handleAiEdit(
+          aiInstruction
+        );
+      },
+      [
+        aiInstruction,
+        handleAiEdit,
+      ]
+    );
+
+  // ==========================================
   // NEW IMAGE
-  // ============================================
-  const handleNewImage = useCallback(() => {
-    if (blobUrlRef.current) {
-      URL.revokeObjectURL(blobUrlRef.current);
-      blobUrlRef.current = null;
-    }
-    setOriginalUrl(null);
-    setResultUrl(null);
-    setResultLoadError(false);
-    setMetadata(null);
-    setImageState("empty");
-    setOriginalPath(null);
-    setCurrentPath(null);
-    setActiveFilter(null);
-    setAdjustments({ brightness: 1, contrast: 1, saturation: 1 });
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    setAiInstruction("");
-    fileInputRef.current?.click();
-  }, []);
+  // ==========================================
 
-  // ============================================
-  // DOWNLOAD — same filename as the displayed edited result
-  // ============================================
-  const downloadFilename = currentPath || originalPath;
-  const downloadHref = downloadFilename
-    ? apiService.downloadUrl(downloadFilename)
-    : null;
+  const handleNewImage =
+    useCallback(() => {
+      if (
+        blobUrlRef.current
+      ) {
+        URL.revokeObjectURL(
+          blobUrlRef.current
+        );
 
-  // ============================================
-  // RENDER FILE SIZE
-  // ============================================
-  const formatFileSize = (bytes) => {
-    if (!bytes) return "N/A";
-    const mb = bytes / (1024 * 1024);
-    if (mb < 1) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${mb.toFixed(2)} MB`;
-  };
+        blobUrlRef.current =
+          null;
+      }
 
-  const showUploadArea = imageState === "empty" || (imageState === "error" && !originalUrl);
+      setOriginalUrl(null);
+      setResultUrl(null);
+      setResultLoadError(false);
+
+      setMetadata(null);
+
+      setImageState("empty");
+
+      setOriginalPath(null);
+      setCurrentPath(null);
+
+      setActiveFilter(null);
+
+      setAdjustments({
+        brightness: 1,
+        contrast: 1,
+        saturation: 1,
+      });
+
+      setErrorMessage(null);
+      setSuccessMessage(null);
+
+      setAiInstruction("");
+
+      fileInputRef.current?.click();
+    }, []);
+
+  // ==========================================
+  // DOWNLOAD
+  // ==========================================
+
+  const downloadFilename =
+    currentPath || originalPath;
+
+  const downloadHref =
+    downloadFilename
+      ? apiService.downloadUrl(
+          downloadFilename
+        )
+      : null;
+
+  // ==========================================
+  // FILE SIZE
+  // ==========================================
+
+  const formatFileSize =
+    (bytes) => {
+      if (!bytes) {
+        return "N/A";
+      }
+
+      const mb =
+        bytes /
+        (1024 * 1024);
+
+      if (mb < 1) {
+        return `${(
+          bytes / 1024
+        ).toFixed(1)} KB`;
+      }
+
+      return `${mb.toFixed(
+        2
+      )} MB`;
+    };
+
+  // ==========================================
+  // UPLOAD AREA
+  // ==========================================
+
+  const showUploadArea =
+    imageState === "empty" ||
+    (
+      imageState === "error" &&
+      !originalUrl
+    );
+
+  // ==========================================
+  // RENDER
+  // ==========================================
 
   return (
     <div className="image-editor-container">
+
+      {/* ======================================
+          HEADER
+      ====================================== */}
+
       <div className="image-editor-header">
-        <h1>AI Image Editor</h1>
+        <h1>
+          AI Image Editor
+        </h1>
+
         <p className="subtitle">
-          Upload, edit, and enhance your images with AI-powered tools — Hindi,
-          Hinglish & English instructions supported
+          Upload, edit, and enhance
+          your images with AI-powered
+          tools — Hindi, Hinglish &
+          English instructions supported
         </p>
       </div>
 
-      {/* ERROR DISPLAY */}
+      {/* ======================================
+          ERROR
+      ====================================== */}
+
       {errorMessage && (
         <div className="error-banner">
-          <span className="error-icon">⚠️</span>
-          <span>{errorMessage}</span>
-          <button className="error-dismiss" onClick={() => setErrorMessage(null)}>
-            ✕
-          </button>
-        </div>
-      )}
 
-      {/* SUCCESS DISPLAY */}
-      {successMessage && !errorMessage && (
-        <div
-          className="success-banner"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            background: "#f0fff4",
-            border: "1px solid #9ae6b4",
-            borderRadius: "8px",
-            padding: "12px 16px",
-            marginBottom: "20px",
-            color: "#276749",
-            fontSize: "0.9rem",
-          }}
-        >
-          <span>✓</span>
-          <span>{successMessage}</span>
+          <span className="error-icon">
+            ⚠️
+          </span>
+
+          <span>
+            {errorMessage}
+          </span>
+
           <button
             className="error-dismiss"
-            style={{ color: "#276749" }}
-            onClick={() => setSuccessMessage(null)}
+            onClick={() =>
+              setErrorMessage(null)
+            }
           >
             ✕
           </button>
+
         </div>
       )}
 
-      {/* PROCESSING OVERLAY */}
+      {/* ======================================
+          SUCCESS
+      ====================================== */}
+
+      {successMessage &&
+        !errorMessage && (
+          <div
+            className="success-banner"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              background:
+                "#f0fff4",
+              border:
+                "1px solid #9ae6b4",
+              borderRadius: "8px",
+              padding:
+                "12px 16px",
+              marginBottom:
+                "20px",
+              color:
+                "#276749",
+              fontSize:
+                "0.9rem",
+            }}
+          >
+
+            <span>✓</span>
+
+            <span>
+              {successMessage}
+            </span>
+
+            <button
+              className="error-dismiss"
+              style={{
+                color:
+                  "#276749",
+              }}
+              onClick={() =>
+                setSuccessMessage(
+                  null
+                )
+              }
+            >
+              ✕
+            </button>
+
+          </div>
+        )}
+
+      {/* ======================================
+          PROCESSING
+      ====================================== */}
+
       {isProcessing && (
         <div className="processing-overlay">
-          <div className="processing-spinner"></div>
-          <p>{processingMessage || "Processing..."}</p>
+
+          <div className="processing-spinner" />
+
+          <p>
+            {processingMessage ||
+              "Processing..."}
+          </p>
+
         </div>
       )}
 
-      {/* UPLOAD AREA */}
+      {/* ======================================
+          UPLOAD AREA
+      ====================================== */}
+
       {showUploadArea && (
         <div
-          className={`upload-area ${dragOver ? "drag-over" : ""}`}
+          className={`upload-area ${
+            dragOver
+              ? "drag-over"
+              : ""
+          }`}
           onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onClick={() => fileInputRef.current?.click()}
+          onDragOver={
+            handleDragOver
+          }
+          onDragLeave={
+            handleDragLeave
+          }
+          onClick={() =>
+            fileInputRef.current?.click()
+          }
         >
+
           <input
             ref={fileInputRef}
             type="file"
             accept=".jpg,.jpeg,.png,.webp"
-            onChange={handleFileInput}
-            style={{ display: "none" }}
+            onChange={
+              handleFileInput
+            }
+            style={{
+              display: "none",
+            }}
           />
+
           <div className="upload-icon">
+
             <svg
               width="64"
               height="64"
@@ -674,262 +1161,669 @@ function ImageEditor() {
             >
               <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
               <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
+              <line
+                x1="12"
+                y1="3"
+                x2="12"
+                y2="15"
+              />
             </svg>
+
           </div>
-          <h3>Drop your image here</h3>
-          <p>or click to browse</p>
-          <p className="upload-hint">Supports JPG, PNG, WebP (up to 10MB)</p>
+
+          <h3>
+            Drop your image here
+          </h3>
+
+          <p>
+            or click to browse
+          </p>
+
+          <p className="upload-hint">
+            Supports JPG, PNG, WebP
+            (up to 10MB)
+          </p>
+
         </div>
       )}
 
-      {/* EDITOR */}
+      {/* ======================================
+          EDITOR
+      ====================================== */}
+
       {imageState !== "empty" && (
         <div className="editor-layout">
-          {/* LEFT SIDEBAR */}
+
+          {/* ==================================
+              LEFT SIDEBAR
+          ================================== */}
+
           <div className="editor-sidebar">
-            <button className="new-image-btn" onClick={handleNewImage}>
+
+            {/* NEW IMAGE */}
+
+            <button
+              className="new-image-btn"
+              onClick={
+                handleNewImage
+              }
+            >
               📁 New Image
             </button>
 
-            {/* FILTERS */}
+            {/* ==================================
+                FILTERS
+            ================================== */}
+
             <div className="tool-section">
-              <h3>Filters</h3>
+
+              <h3>
+                Filters
+              </h3>
+
               <div className="filter-grid">
-                {FILTERS.map((filter) => (
-                  <button
-                    key={filter.id}
-                    className={`filter-btn ${activeFilter === filter.id ? "active" : ""}`}
-                    onClick={() => applyFilter(filter.id)}
-                    disabled={isProcessing || !currentPath}
-                    title={filter.label}
-                  >
-                    <span className="filter-icon">{filter.icon}</span>
-                    <span className="filter-label">{filter.label}</span>
-                  </button>
-                ))}
+
+                {FILTERS.map(
+                  (filter) => (
+                    <button
+                      key={
+                        filter.id
+                      }
+                      className={`filter-btn ${
+                        activeFilter ===
+                        filter.id
+                          ? "active"
+                          : ""
+                      }`}
+                      onClick={() =>
+                        applyFilter(
+                          filter.id
+                        )
+                      }
+                      disabled={
+                        isProcessing ||
+                        !currentPath
+                      }
+                      title={
+                        filter.label
+                      }
+                    >
+
+                      <span className="filter-icon">
+                        {filter.icon}
+                      </span>
+
+                      <span className="filter-label">
+                        {filter.label}
+                      </span>
+
+                    </button>
+                  )
+                )}
+
               </div>
+
             </div>
 
-            {/* ADJUSTMENTS */}
+            {/* ==================================
+                ADJUSTMENTS
+            ================================== */}
+
             <div className="tool-section">
-              <h3>Adjustments</h3>
+
+              <h3>
+                Adjustments
+              </h3>
+
+              {/* BRIGHTNESS */}
 
               <div className="adjustment-group">
+
                 <label>
                   Brightness
-                  <span className="adjust-value">{adjustments.brightness.toFixed(1)}x</span>
+
+                  <span className="adjust-value">
+                    {adjustments.brightness.toFixed(
+                      1
+                    )}
+                    x
+                  </span>
                 </label>
+
                 <input
                   type="range"
                   min="0.3"
                   max="2.0"
                   step="0.1"
-                  value={adjustments.brightness}
-                  onChange={(e) => handleAdjustmentChange("brightness", e.target.value)}
-                  disabled={isProcessing || !currentPath}
+                  value={
+                    adjustments.brightness
+                  }
+                  onChange={(e) =>
+                    handleAdjustmentChange(
+                      "brightness",
+                      e.target.value
+                    )
+                  }
+                  disabled={
+                    isProcessing ||
+                    !currentPath
+                  }
                 />
+
               </div>
 
+              {/* CONTRAST */}
+
               <div className="adjustment-group">
+
                 <label>
                   Contrast
-                  <span className="adjust-value">{adjustments.contrast.toFixed(1)}x</span>
+
+                  <span className="adjust-value">
+                    {adjustments.contrast.toFixed(
+                      1
+                    )}
+                    x
+                  </span>
                 </label>
+
                 <input
                   type="range"
                   min="0.3"
                   max="2.5"
                   step="0.1"
-                  value={adjustments.contrast}
-                  onChange={(e) => handleAdjustmentChange("contrast", e.target.value)}
-                  disabled={isProcessing || !currentPath}
+                  value={
+                    adjustments.contrast
+                  }
+                  onChange={(e) =>
+                    handleAdjustmentChange(
+                      "contrast",
+                      e.target.value
+                    )
+                  }
+                  disabled={
+                    isProcessing ||
+                    !currentPath
+                  }
                 />
+
               </div>
 
+              {/* SATURATION */}
+
               <div className="adjustment-group">
+
                 <label>
                   Saturation
-                  <span className="adjust-value">{adjustments.saturation.toFixed(1)}x</span>
+
+                  <span className="adjust-value">
+                    {adjustments.saturation.toFixed(
+                      1
+                    )}
+                    x
+                  </span>
                 </label>
+
                 <input
                   type="range"
                   min="0.0"
                   max="3.0"
                   step="0.1"
-                  value={adjustments.saturation}
-                  onChange={(e) => handleAdjustmentChange("saturation", e.target.value)}
-                  disabled={isProcessing || !currentPath}
+                  value={
+                    adjustments.saturation
+                  }
+                  onChange={(e) =>
+                    handleAdjustmentChange(
+                      "saturation",
+                      e.target.value
+                    )
+                  }
+                  disabled={
+                    isProcessing ||
+                    !currentPath
+                  }
                 />
+
               </div>
+
             </div>
 
-            {/* QUICK ACTIONS */}
+            {/* ==================================
+                QUICK ACTIONS
+            ================================== */}
+
             <div className="tool-section">
-              <h3>Quick Actions</h3>
+
+              <h3>
+                Quick Actions
+              </h3>
+
               <div className="quick-actions-grid">
-                {QUICK_ACTIONS.map((action) => (
-                  <button
-                    key={action.id}
-                    className="quick-action-btn"
-                    onClick={() => handleQuickAction(action.id)}
-                    disabled={isProcessing || !currentPath}
-                  >
-                    <span className="action-icon">{action.icon}</span>
-                    <span className="action-label">{action.label}</span>
-                  </button>
-                ))}
+
+                {QUICK_ACTIONS.map(
+                  (action) => (
+                    <button
+                      key={
+                        action.id
+                      }
+                      className="quick-action-btn"
+                      onClick={() =>
+                        handleQuickAction(
+                          action.id
+                        )
+                      }
+                      disabled={
+                        isProcessing ||
+                        !currentPath
+                      }
+                    >
+
+                      <span className="action-icon">
+                        {action.icon}
+                      </span>
+
+                      <span className="action-label">
+                        {action.label}
+                      </span>
+
+                    </button>
+                  )
+                )}
+
               </div>
+
             </div>
 
-            {/* HAIRSTYLES — AI */}
-<div className="tool-section">
-  <h3>Hairstyles (AI)</h3>
+            {/* ==================================
+                BACKGROUND BLUR
+            ================================== */}
 
-  <div className="filter-grid">
-    {HAIRSTYLES.map((hs) => (
-      <button
-        key={hs.id}
-        className="filter-btn"
-        onClick={() => handleHairstyle(hs.id)}
-        disabled={isProcessing || !currentPath}
-        title={hs.label}
-      >
-        <span className="filter-icon">{hs.icon}</span>
-        <span className="filter-label">{hs.label}</span>
-      </button>
-    ))}
-  </div>
-</div>
-
-            {/* AI EDIT */}
             <div className="tool-section">
-              <h3>AI Edit (Hindi / English)</h3>
-              <form onSubmit={handleAiEditSubmit} className="ai-edit-form">
+
+              <h3>
+                Background Blur
+              </h3>
+
+              <div className="quick-actions-grid">
+
+                {BG_BLUR_LEVELS.map(
+                  (level) => (
+                    <button
+                      key={level}
+                      className={`quick-action-btn ${
+                        blurIntensity ===
+                        level
+                          ? "active"
+                          : ""
+                      }`}
+                      onClick={() =>
+                        handleBackgroundBlur(
+                          level
+                        )
+                      }
+                      disabled={
+                        isProcessing ||
+                        !currentPath
+                      }
+                    >
+
+                      <span
+                        className="action-label"
+                        style={{
+                          textTransform:
+                            "capitalize",
+                        }}
+                      >
+                        {level}
+                      </span>
+
+                    </button>
+                  )
+                )}
+
+              </div>
+
+            </div>
+
+            {/* ==================================
+                HAIRSTYLES — AI
+            ================================== */}
+
+            <div className="tool-section">
+
+              <h3>
+                Hairstyles (AI)
+              </h3>
+
+              <div className="filter-grid">
+
+                {HAIRSTYLES.map(
+                  (hs) => (
+                    <button
+                      key={hs.id}
+                      className="filter-btn"
+                      onClick={() =>
+                        handleHairstyle(
+                          hs.id
+                        )
+                      }
+                      disabled={
+                        isProcessing ||
+                        !currentPath
+                      }
+                      title={
+                        hs.label
+                      }
+                    >
+
+                      <span className="filter-icon">
+                        {hs.icon}
+                      </span>
+
+                      <span className="filter-label">
+                        {hs.label}
+                      </span>
+
+                    </button>
+                  )
+                )}
+
+              </div>
+
+              <p
+                style={{
+                  fontSize:
+                    "0.7rem",
+                  color:
+                    "#888",
+                  marginTop:
+                    "6px",
+                }}
+              >
+                Hairstyle previews
+                AI se generate hote
+                hain. Backend me AI
+                key/configuration
+                available na hone par
+                clear error milega.
+              </p>
+
+            </div>
+
+            {/* ==================================
+                AI EDIT
+            ================================== */}
+
+            <div className="tool-section">
+
+              <h3>
+                AI Edit (Hindi /
+                English)
+              </h3>
+
+              <form
+                onSubmit={
+                  handleAiEditSubmit
+                }
+                className="ai-edit-form"
+              >
+
                 <input
                   type="text"
-                  value={aiInstruction}
-                  onChange={(e) => setAiInstruction(e.target.value)}
+                  value={
+                    aiInstruction
+                  }
+                  onChange={(e) =>
+                    setAiInstruction(
+                      e.target.value
+                    )
+                  }
                   placeholder='e.g., "background hata do aur HD kar do"'
-                  disabled={isProcessing || !currentPath}
+                  disabled={
+                    isProcessing ||
+                    !currentPath
+                  }
                   className="ai-input"
                 />
+
                 <button
                   type="submit"
                   className="ai-edit-btn"
-                  disabled={isProcessing || !aiInstruction.trim() || !currentPath}
+                  disabled={
+                    isProcessing ||
+                    !aiInstruction.trim() ||
+                    !currentPath
+                  }
                 >
                   Apply
                 </button>
+
               </form>
+
               <div
                 style={{
-                  display: "flex",
-                  flexWrap: "wrap",
+                  display:
+                    "flex",
+                  flexWrap:
+                    "wrap",
                   gap: "6px",
-                  marginTop: "10px",
+                  marginTop:
+                    "10px",
                 }}
               >
-                {AI_SUGGESTIONS.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setAiInstruction(s)}
-                    disabled={isProcessing || !currentPath}
-                    style={{
-                      fontSize: "0.7rem",
-                      padding: "4px 8px",
-                      borderRadius: "12px",
-                      border: "1px solid #d0ccff",
-                      background: "#f5f3ff",
-                      color: "#5a52d5",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {s}
-                  </button>
-                ))}
+
+                {AI_SUGGESTIONS.map(
+                  (suggestion) => (
+                    <button
+                      key={
+                        suggestion
+                      }
+                      type="button"
+                      onClick={() =>
+                        setAiInstruction(
+                          suggestion
+                        )
+                      }
+                      disabled={
+                        isProcessing ||
+                        !currentPath
+                      }
+                      style={{
+                        fontSize:
+                          "0.7rem",
+                        padding:
+                          "4px 8px",
+                        borderRadius:
+                          "12px",
+                        border:
+                          "1px solid #d0ccff",
+                        background:
+                          "#f5f3ff",
+                        color:
+                          "#5a52d5",
+                        cursor:
+                          "pointer",
+                      }}
+                    >
+                      {suggestion}
+                    </button>
+                  )
+                )}
+
               </div>
+
             </div>
 
-            {/* RESET */}
+            {/* ==================================
+                RESET
+            ================================== */}
+
             <button
               className="reset-btn"
-              onClick={handleReset}
-              disabled={isProcessing || !originalPath}
+              onClick={
+                handleReset
+              }
+              disabled={
+                isProcessing ||
+                !originalPath
+              }
             >
               🔄 Reset to Original
             </button>
+
           </div>
 
-          {/* RIGHT PANEL — Preview */}
+          {/* ==================================
+              RIGHT PREVIEW
+          ================================== */}
+
           <div className="editor-preview">
-            {/* ORIGINAL IMAGE — always visible, never modified */}
+
+            {/* =================================
+                ORIGINAL
+            ================================= */}
+
             <div className="preview-section">
-              <h3>Original Image</h3>
+
+              <h3>
+                Original Image
+              </h3>
+
               <div className="image-frame">
+
                 {originalUrl ? (
-                  <img src={originalUrl} alt="Original" className="preview-image" />
+                  <img
+                    src={originalUrl}
+                    alt="Original"
+                    className="preview-image"
+                  />
                 ) : (
-                  <div className="no-image-placeholder">No image uploaded.</div>
+                  <div className="no-image-placeholder">
+                    No image uploaded.
+                  </div>
                 )}
+
               </div>
+
               {metadata && (
                 <div className="image-info">
+
                   <span className="info-badge">
-                    {metadata.width} × {metadata.height}
+                    {metadata.width} ×{" "}
+                    {metadata.height}
                   </span>
-                  <span className="info-badge">{metadata.format || "jpeg"}</span>
+
+                  <span className="info-badge">
+                    {metadata.format ||
+                      "jpeg"}
+                  </span>
+
                   {metadata.size && (
-                    <span className="info-badge">{formatFileSize(metadata.size)}</span>
+                    <span className="info-badge">
+                      {formatFileSize(
+                        metadata.size
+                      )}
+                    </span>
                   )}
+
                 </div>
               )}
+
             </div>
 
-            {/* EDITED RESULT — canonical backend preview URL */}
+            {/* =================================
+                EDITED RESULT
+            ================================= */}
+
             <div className="preview-section">
+
               <h3>
-                {resultUrl ? "Edited Result" : "Preview"}
+
+                {resultUrl
+                  ? "Edited Result"
+                  : "Preview"}
+
                 {downloadHref && (
-                  <a href={downloadHref} download className="download-link">
+                  <a
+                    href={
+                      downloadHref
+                    }
+                    download
+                    className="download-link"
+                  >
                     ⬇ Download
                   </a>
                 )}
+
               </h3>
+
               <div className="image-frame">
+
                 {resultUrl && (
                   <img
                     src={resultUrl}
                     alt="Edited"
                     className="preview-image"
-                    onError={() => setResultLoadError(true)}
-                    onLoad={() => setResultLoadError(false)}
-                    style={{ display: resultLoadError ? "none" : "block" }}
+                    onError={() =>
+                      setResultLoadError(
+                        true
+                      )
+                    }
+                    onLoad={() =>
+                      setResultLoadError(
+                        false
+                      )
+                    }
+                    style={{
+                      display:
+                        resultLoadError
+                          ? "none"
+                          : "block",
+                    }}
                   />
                 )}
+
                 <div
                   className="no-image-placeholder"
-                  style={{ display: resultUrl && !resultLoadError ? "none" : "flex" }}
+                  style={{
+                    display:
+                      resultUrl &&
+                      !resultLoadError
+                        ? "none"
+                        : "flex",
+                  }}
                 >
+
                   {resultUrl
                     ? resultLoadError
                       ? "Result image load nahi hui. Retry ya naya edit try karo."
                       : "Loading result..."
                     : "Apply a filter or adjustment to see the result"}
+
                 </div>
+
               </div>
-              {resultUrl && !resultLoadError && metadata && (
-                <div className="image-info">
-                  <span className="info-badge">
-                    {metadata.width} × {metadata.height}
-                  </span>
-                </div>
-              )}
+
+              {resultUrl &&
+                !resultLoadError &&
+                metadata && (
+                  <div className="image-info">
+
+                    <span className="info-badge">
+                      {metadata.width} ×{" "}
+                      {metadata.height}
+                    </span>
+
+                  </div>
+                )}
+
             </div>
+
           </div>
+
         </div>
       )}
+
     </div>
   );
 }
