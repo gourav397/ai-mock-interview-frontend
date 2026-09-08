@@ -14,6 +14,7 @@ function Test() {
 
   const [difficulty, setDifficulty] = useState("Medium");
   const [questions, setQuestions] = useState([]);
+  const [activeDifficulty, setActiveDifficulty] = useState("Medium"); // jo actually use hui
   const [started, setStarted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [current, setCurrent] = useState(0);
@@ -56,25 +57,56 @@ function Test() {
     return q.options?.some((opt) => typeof opt === "object" && getOptionExplanation(opt));
   };
 
+  // ---------- START TEST (MongoDB bank se — live AI generation NAHI) ----------
   const startTest = async () => {
     setLoading(true);
     try {
-      const res = await API.get("/api/ai-interview/generate", {
-        params: { category, difficulty, count: 50 },
-      });
-      const qs = res.data.questions || [];
+      // 1) Selected difficulty → 2) Medium fallback → 3) koi bhi available
+      const tryLoad = async (diff) => {
+        try {
+          const r = await API.get("/api/question-banks/get", {
+            params: { category, difficulty: diff, count: 50 },
+          });
+          return r.data?.questions?.length ? r : null;
+        } catch {
+          return null;
+        }
+      };
+
+      let res = await tryLoad(difficulty);
+      let usedDiff = difficulty;
+
+      if (!res && difficulty !== "Medium") {
+        res = await tryLoad("Medium");
+        if (res) usedDiff = "Medium";
+      }
+      if (!res) {
+        for (const d of ["Easy", "Medium", "Hard"]) {
+          if (d !== difficulty) {
+            res = await tryLoad(d);
+            if (res) { usedDiff = d; break; }
+          }
+        }
+      }
+
+      const qs = res?.data?.questions || [];
       if (!qs.length) {
-        alert("Is category me questions nahi mile");
+        alert(
+          `Is category (${category}) me questions abhi available nahi hain.\n` +
+          "Roz raat 3 baje naye questions add hote hain — thodi der baad try karo."
+        );
         return;
       }
+
       setQuestions(qs);
+      setActiveDifficulty(usedDiff);
       setAnswers({});
       setCurrent(0);
       setFinished(false);
       setTimeUp(false);
       setSaved(false);
       setSavedResultId(null);
-      setTimeLeft(TIME_LIMITS[difficulty] || 60 * 60);
+      setTimeLeft(TIME_LIMITS[usedDiff] || 60 * 60);
       setReviewFilter("all");
       setStarted(true);
     } catch (error) {
@@ -212,7 +244,7 @@ function Test() {
       const payload = {
         user: user.id,
         category,
-        difficulty,
+        difficulty: activeDifficulty,
         totalQuestions: questions.length,
         score: finalScore,
         percentage,
@@ -259,7 +291,7 @@ function Test() {
 
           <div className="flex items-center gap-4 text-sm">
             <span className="text-white/50">
-              {category} — {difficulty}
+              {category} — {activeDifficulty}
             </span>
 
             <button
@@ -324,13 +356,13 @@ function Test() {
                 className="w-full py-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold rounded-xl hover:shadow-lg hover:shadow-purple-600/30 transition-all disabled:opacity-50 text-lg"
               >
                 {loading
-                  ? "⏳ Generating AI Questions..."
+                  ? "⏳ Questions load ho rahe hain..."
                   : "🚀 Start Test"}
               </button>
 
               {loading && (
                 <p className="text-purple-300 text-sm text-center animate-pulse">
-                  AI 50 {difficulty} questions bana raha hai... 30-60 sec
+                  ⏳ Question bank se load ho raha hai... sirf 2-3 second
                 </p>
               )}
             </div>
@@ -403,7 +435,7 @@ function Test() {
               </div>
             </div>
 
-            {/* 🔥 OPTIONS — Question already upar timer me hai, ab options dikhao */}
+            {/* 🔥 OPTIONS */}
             <div className="space-y-3 mb-6">
               {questions[current]?.options?.map((option, index) => {
                 const optText =
@@ -477,7 +509,7 @@ function Test() {
           </>
         ) : (
           <>
-            {/* 🔥🔥🔥 RESULT SECTION — PREMIUM PREMIUM PREMIUM */}
+            {/* 🔥🔥🔥 RESULT SECTION */}
             {timeUp && (
               <div className="mb-4 p-4 rounded-xl bg-red-500/20 border border-red-400/30 text-red-300 font-semibold text-center">
                 ⏰ Time's up! Auto-submitted.
@@ -586,7 +618,7 @@ function Test() {
                   </div>
 
                   <p className="mt-3 text-white/40 text-sm">
-                    {category} • {difficulty}
+                    {category} • {activeDifficulty}
                   </p>
                 </div>
               </div>
@@ -716,7 +748,7 @@ function Test() {
                                   {optText}
                                 </span>
 
-                                {/* 🔥 OPTION EXPLANATION — YAHI CHAHIYE THA */}
+                                {/* 🔥 OPTION EXPLANATION */}
                                 {optExplanation && (
                                   <div className="mt-2 text-xs text-blue-300 border-t border-white/10 pt-2 leading-relaxed">
                                     {optExplanation}
@@ -737,7 +769,7 @@ function Test() {
                       })}
                     </div>
 
-                    {/* 🔥 GENERAL EXPLANATION — sirf tab show karo jab API se aayi ho aur options ki explanation se different ho */}
+                    {/* 🔥 GENERAL EXPLANATION */}
                     {generalExplanation && !hasOptionExp && (
                       <div className="mt-3 p-4 rounded-xl bg-blue-500/10 border border-blue-400/20 text-sm text-blue-200 leading-relaxed">
                         <b>📖 Additional Info:</b>{" "}
@@ -745,7 +777,6 @@ function Test() {
                       </div>
                     )}
 
-                    {/* 🔥 Jab options ki explanations hain toh koi extra box nahi — clean UI */}
                     {generalExplanation && hasOptionExp && (
                       <div className="mt-2 text-xs text-blue-300/60 text-right">
                         📖 See option explanations above

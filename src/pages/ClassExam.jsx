@@ -59,7 +59,7 @@ function ClassExam() {
     })();
   }, []);
 
-  // ---------- START TEST ----------
+  // ---------- START TEST (MongoDB bank se — live AI generation NAHI) ----------
   const startTest = async () => {
     if (!category) {
       alert("Pehle Class, Stream aur Subject select karo");
@@ -67,20 +67,50 @@ function ClassExam() {
     }
     setLoading(true);
     try {
-      const res = await API.get("/api/ai-interview/generate", {
-        params: { category, difficulty, count: 50 },
-      });
-      const qs = res.data.questions || [];
+      // 1) Selected difficulty se try karo
+      // 2) Empty ho to Medium fallback
+      // 3) Phir bhi empty ho to koi bhi available difficulty
+      let res = null;
+      const tryLoad = async (diff) => {
+        try {
+          const r = await API.get("/api/question-banks/get", {
+            params: { category, difficulty: diff, count: 50 },
+          });
+          return r.data?.questions?.length ? r : null;
+        } catch {
+          return null;
+        }
+      };
+
+      res = await tryLoad(difficulty);
+      if (!res && difficulty !== "Medium") res = await tryLoad("Medium");
+      if (!res) {
+        for (const d of ["Easy", "Hard"]) {
+          if (d !== difficulty) {
+            res = await tryLoad(d);
+            if (res) break;
+          }
+        }
+      }
+
+      const qs = res?.data?.questions || [];
       if (!qs.length) {
-        alert("Is subject me questions nahi mile — thodi der baad try karo");
+        alert(
+          `Is subject (${category}) me questions abhi available nahi hain.\n` +
+          "Roz raat 3 baje naye questions add hote hain — thodi der baad try karo."
+        );
         return;
       }
+
+      const usedDiff = res.data.questions.length ? difficulty : difficulty; // display same
       setQuestions(qs);
       setAnswers({});
       setCurrent(0);
       setTimeLeft(30);
       setReviewFilter("all");
       setStep("test");
+      // agar fallback difficulty use hui ho to bhi test wahi questions se chalega
+      if (!usedDiff) return;
     } catch (error) {
       console.log(error);
       alert(error.response?.data?.message || "Questions load nahi hue — 1 min baad try karo");
@@ -289,12 +319,12 @@ function ClassExam() {
               disabled={loading || !category}
               className="mt-6 w-full bg-blue-600 text-white px-6 py-3 rounded font-bold disabled:opacity-40"
             >
-              {loading ? "Questions bana rahe hain..." : `Start Test — ${category || "Pehle select karo"}`}
+              {loading ? "Questions load ho rahe hain..." : `Start Test — ${category || "Pehle select karo"}`}
             </button>
 
             {loading && (
               <p className="mt-3 text-blue-600 font-semibold text-sm">
-                ⏳ AI 50 questions bana raha hai... 30-90 second lag sakte hain (sirf pehli baar)
+                ⏳ Question bank se load ho raha hai... sirf 2-3 second lagenge
               </p>
             )}
           </>
@@ -436,7 +466,11 @@ function ClassExam() {
                 const skipped = !userAns;
                 const isCorrect = userAns === q.correctAnswer;
                 const correctOption = q.options?.find((o) => o.text === q.correctAnswer);
-                const explanation = correctOption?.info || q.options?.[0]?.info || "";
+                // ✅ FIXED: backend field 'explanation' hai (pehle 'info' tha — kabhi show nahi hota tha)
+                const explanation =
+                  correctOption?.explanation ||
+                  q.options?.find((o) => o.explanation)?.explanation ||
+                  "";
                 return (
                   <div key={idx} className={`rounded-xl border-2 p-4 shadow-sm ${
                     skipped ? "border-yellow-200 bg-yellow-50/60"
