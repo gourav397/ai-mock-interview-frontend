@@ -27,13 +27,13 @@ function UploadResume() {
 
       alert("Resume Uploaded");
 
-      if (Array.isArray(res.data.questions)) {
-        setQuestions(res.data.questions);
-        console.log("FRONTEND RECEIVED:", res.data.questions.length, "questions");
-        console.log("Q1:", JSON.stringify(res.data.questions[0], null, 2));
-      } else {
-        setQuestions([]);
-      }
+      if (Array.isArray(res.data.questions) && res.data.questions.length) {
+  setQuestions(res.data.questions);
+  console.log("FRONTEND RECEIVED:", res.data.questions.length, "questions");
+} else {
+  setQuestions([]);
+  alert(res.data.message || "Questions generate nahi hue — thodi der baad try karo");
+}
     } catch (error) {
       console.log(error);
       alert(error.response?.data?.message || "Upload Error");
