@@ -15,11 +15,14 @@ function Navbar() {
 
   useEffect(() => {
     const showBtn = () => setShowInstall(true);
+
     window.addEventListener("install-ready", showBtn);
+
     if (getInstallPrompt()) showBtn();
     if (isIOS) setShowInstall(true);
 
     const hideBtn = () => setShowInstall(false);
+
     window.addEventListener("appinstalled", hideBtn);
 
     return () => {
@@ -39,6 +42,7 @@ function Navbar() {
       alert('iPhone pe: Share (📤) button → "Add to Home Screen"');
       return;
     }
+
     await installApp();
   };
 
@@ -49,7 +53,8 @@ function Navbar() {
       </Link>
 
       <div className="flex gap-6 items-center flex-wrap">
-        {/* 📲 Install — ab ye tabhi dikhega jab prompt ready ho (ya iPhone pe) */}
+
+        {/* 📲 Install App */}
         {showInstall && (
           <button
             onClick={handleInstall}
@@ -59,14 +64,17 @@ function Navbar() {
           </button>
         )}
 
-        {/* 📚 Learn More — click karte hi 4 slides wapas khul jayengi, bina reload ke */}
+        {/* 📚 Learn More */}
         <button
-          onClick={() => window.dispatchEvent(new CustomEvent("show-onboarding"))}
+          onClick={() =>
+            window.dispatchEvent(new CustomEvent("show-onboarding"))
+          }
           className="text-gray-700 hover:text-blue-600"
         >
           📚 Learn More
         </button>
 
+        {/* 🌐 Language */}
         <button
           onClick={() => setLang(toggleLang())}
           className="text-gray-700 hover:text-blue-600"
@@ -74,20 +82,46 @@ function Navbar() {
           🌐 {lang === "hi" ? "English" : "हिंदी"}
         </button>
 
+        {/* 🏠 Home */}
         <Link to="/" className="text-gray-700 hover:text-blue-600">
           Home
         </Link>
 
-        <Link to="/class-exam">📘 Class 11/12</Link>
+        {/* 📘 Class 11/12 */}
+        <Link
+          to="/class-exam"
+          className="text-gray-700 hover:text-blue-600"
+        >
+          📘 Class 11/12
+        </Link>
 
         {token ? (
           <>
-            <Link to="/dashboard" className="text-gray-700 hover:text-blue-600">
+            {/* 📊 AI PPT — NEW */}
+            <Link
+              to="/ppt"
+              className="text-gray-700 hover:text-blue-600"
+            >
+              📊 AI PPT
+            </Link>
+
+            {/* 📊 Dashboard */}
+            <Link
+              to="/dashboard"
+              className="text-gray-700 hover:text-blue-600"
+            >
               {t("dashboard")}
             </Link>
-            <Link to="/profile" className="text-gray-700 hover:text-blue-600">
+
+            {/* 👤 Profile */}
+            <Link
+              to="/profile"
+              className="text-gray-700 hover:text-blue-600"
+            >
               {t("profile")}
             </Link>
+
+            {/* 🚪 Logout */}
             <button
               onClick={logout}
               className="bg-red-600 text-white px-4 py-2 rounded-lg"
@@ -97,10 +131,19 @@ function Navbar() {
           </>
         ) : (
           <>
-            <Link to="/login" className="text-gray-700 hover:text-blue-600">
+            {/* 🔐 Login */}
+            <Link
+              to="/login"
+              className="text-gray-700 hover:text-blue-600"
+            >
               Login
             </Link>
-            <Link to="/register" className="bg-blue-600 text-white px-4 py-2 rounded-lg">
+
+            {/* 📝 Register */}
+            <Link
+              to="/register"
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg"
+            >
               Register
             </Link>
           </>

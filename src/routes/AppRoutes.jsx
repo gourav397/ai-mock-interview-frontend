@@ -22,11 +22,13 @@ import Result from "../pages/Result";
 import UploadResume from "../pages/UploadResume";
 import HistoryDetail from "../pages/HistoryDetail";
 
+
 // Admin Pages
 import Admin from "../pages/Admin/Admin";
 import Questions from "../pages/Admin/Questions/Questions";
 import BulkUpload from "../pages/Admin/BulkUpload/BulkUpload";
 import Category from "../pages/Category/Category";
+import PPTGenerator from "./pages/PPTGenerator";
 
 
 function AppRoutes() {
@@ -57,6 +59,7 @@ function AppRoutes() {
         <Route path="/test/:category" element={<Test />} />
         <Route path="/result" element={<Result />} />
         <Route path="/image-editor" element={<ImageEditor />} />
+        <Route path="/ppt" element={<ProtectedRoute><PPTGenerator /></ProtectedRoute>} />
         <Route path="/history-detail/:id" element={<HistoryDetail />} />
 
         {/* Admin */}
