@@ -141,7 +141,7 @@ export default function useVoiceInterview() {
 
       setStatusMessage('Starting voice interview...');
 
-      const res = await API.post('/ai-interview/voice/start', {
+      const res = await API.post('/api/ai-interview/voice/start', {
         jobRole: role,
         difficulty: config?.difficulty || 'Medium',
         techStack: tech,
@@ -211,7 +211,7 @@ export default function useVoiceInterview() {
     console.log('[VOICE] Sending:', userText.slice(0, 100));
 
     try {
-      const res = await API.post('/ai-interview/voice/chat', {
+      const res = await API.post('/api/ai-interview/voice/chat', {
         sessionId: sessionIdRef.current,
         message: userText,
         emotion,
@@ -304,7 +304,7 @@ export default function useVoiceInterview() {
     speechRec.stopListening();
     speechSynth.stop();
     if (sessionIdRef.current) {
-      try { await API.post('/ai-interview/voice/end', { sessionId: sessionIdRef.current }); } catch (e) {}
+      try { await API.post('/api/ai-interview/voice/end', { sessionId: sessionIdRef.current }); } catch (e) {}
     }
     setInterviewState('complete');
     setStatusMessage('Interview ended');
