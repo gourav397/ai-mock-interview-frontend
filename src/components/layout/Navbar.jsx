@@ -87,6 +87,10 @@ function Navbar() {
           Home
         </Link>
 
+        <Link to="/ppt" className="text-gray-700 hover:text-blue-600">
+  📊 AI PPT
+</Link>
+
         {/* 📘 Class 11/12 */}
         <Link
           to="/class-exam"
