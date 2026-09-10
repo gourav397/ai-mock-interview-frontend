@@ -16,6 +16,12 @@ const api = axios.create({
 });
 
 // ============================================================
+// LONG TIMEOUT — AI generation requests ke liye (resume etc.)
+// ============================================================
+
+const LONG_TIMEOUT = 300000; // 5 minutes
+
+// ============================================================
 // AUTH INTERCEPTOR
 // ============================================================
 
@@ -63,8 +69,14 @@ api.interceptors.response.use(
       error.message = message;
       error.responseData = data;
     } else if (error.request) {
-      error.message =
-        "No response from server. Check your connection.";
+      // timeout ya network fail — clear message
+      if (error.code === "ECONNABORTED") {
+        error.message =
+          "Request time out ho gayi — AI generation me time lag raha hai, thodi der baad try karo.";
+      } else {
+        error.message =
+          "No response from server. Check your connection.";
+      }
     }
 
     return Promise.reject(error);
@@ -195,6 +207,17 @@ const apiService = {
     api.delete(url, config),
 
   // ----------------------------------------------------------
+  // LONG AI POST — resume upload jaise slow AI calls ke liye
+  // (5 min timeout — axios cancel nahi hoga)
+  // ----------------------------------------------------------
+
+  postLong: (url, data, config = {}) =>
+    api.post(url, data, {
+      ...config,
+      timeout: LONG_TIMEOUT,
+    }),
+
+  // ----------------------------------------------------------
   // HELPERS
   // ----------------------------------------------------------
 
@@ -221,6 +244,32 @@ const apiService = {
       "/api/image-editor/upload",
       formData,
       {
+        headers: {
+          "Content-Type": undefined,
+        },
+      }
+    );
+  },
+
+  // ----------------------------------------------------------
+  // RESUME UPLOAD — LONG TIMEOUT (5 min)
+  // Yahi fix hai: pehle 120s timeout par cancel ho raha tha
+  // ----------------------------------------------------------
+
+  uploadResume: (file) => {
+    const formData = new FormData();
+
+    formData.append(
+      "resume",
+      file,
+      file.name
+    );
+
+    return api.post(
+      "/api/upload/resume",
+      formData,
+      {
+        timeout: LONG_TIMEOUT,
         headers: {
           "Content-Type": undefined,
         },
