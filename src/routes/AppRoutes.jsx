@@ -59,7 +59,7 @@ function AppRoutes() {
         <Route path="/test/:category" element={<Test />} />
         <Route path="/result" element={<Result />} />
         <Route path="/image-editor" element={<ImageEditor />} />
-        <Route path="/ppt" element={<ProtectedRoute><PPTGenerator /></ProtectedRoute>} />
+        <Route path="/ppt" element={<PPTGenerator />} />
         <Route path="/history-detail/:id" element={<HistoryDetail />} />
 
         {/* Admin */}
