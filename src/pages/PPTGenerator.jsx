@@ -5,7 +5,7 @@
 // ============================================================
 
 import { useState, useEffect, useCallback } from "react";
-import { apiService } from "../services/api";
+import apiService from "../services/api";
 
 const SLIDE_OPTIONS = [5, 10, 15, 20];
 const LANGUAGES = ["English", "Hindi", "Bilingual"];

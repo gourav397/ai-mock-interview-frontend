@@ -28,7 +28,7 @@ import Admin from "../pages/Admin/Admin";
 import Questions from "../pages/Admin/Questions/Questions";
 import BulkUpload from "../pages/Admin/BulkUpload/BulkUpload";
 import Category from "../pages/Category/Category";
-import PPTGenerator from "./pages/PPTGenerator";
+import PPTGenerator from "../pages/PPTGenerator";
 
 
 function AppRoutes() {
