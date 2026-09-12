@@ -510,7 +510,7 @@ const apiService = {
   downloadUrl: buildDownloadUrl,
 };
 
-exexport default apiService;
+export default apiService;
 
 export {
   api,
