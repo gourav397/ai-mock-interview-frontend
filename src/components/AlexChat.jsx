@@ -12,13 +12,53 @@ const renderContent = (content) => {
   let html = content
     .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="language-$1">$2</code></pre>')
     .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+    .replace(/^## (.+)$/gm, "<h3>$1</h3>")
+    .replace(/^# (.+)$/gm, "<h3>$1</h3>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\*([^*]+)\*/g, "<em>$1</em>")
     .replace(/^•\s(.+)$/gm, "<li>$1</li>")
+    .replace(/^[-*]\s(.+)$/gm, "<li>$1</li>")
+    .replace(/^\d+\.\s(.+)$/gm, "<li>$1</li>")
     .replace(/(<li>.*<\/li>\n?)+/g, "<ul>$&</ul>")
     .replace(/\n\n/g, "</p><p>")
     .replace(/\n/g, "<br/>");
   return `<p>${html}</p>`;
+};
+
+// Report panel — collapsible, scrollable, markdown-rendered
+const ReportPanel = ({ report }) => {
+  const [expanded, setExpanded] = useState(false);
+  if (!report) return null;
+  return (
+    <div style={{
+      marginTop: "10px", border: "1px solid rgba(139,92,246,0.3)",
+      borderRadius: "10px", overflow: "hidden", background: "#0d0d21",
+    }}>
+      <button
+        onClick={() => setExpanded(prev => !prev)}
+        style={{
+          width: "100%", background: "rgba(139,92,246,0.15)", border: "none",
+          padding: "10px 14px", color: "#c4b5fd", fontSize: "13px",
+          fontWeight: 600, cursor: "pointer", display: "flex",
+          alignItems: "center", justifyContent: "space-between",
+        }}
+      >
+        <span>📊 Analysis Report ({Math.ceil(report.length / 1000)}k chars)</span>
+        <span>{expanded ? "▲ Collapse" : "▼ Expand"}</span>
+      </button>
+      <div
+        className="alex-content alex-report"
+        dangerouslySetInnerHTML={{ __html: renderContent(expanded ? report : report.slice(0, 2500) + "\n\n_...report truncated. Click Expand for full report._") }}
+        style={{
+          padding: "14px", color: "#e2e8f0", fontSize: "12.5px",
+          lineHeight: "1.6", wordBreak: "break-word",
+          maxHeight: expanded ? "400px" : "260px",
+          overflowY: "auto", whiteSpace: "normal",
+        }}
+      />
+    </div>
+  );
 };
 
 const ResultCard = ({ result }) => {
@@ -79,6 +119,7 @@ const ChatMessage = ({ message }) => {
         borderRadius: isUser ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
         padding: "14px 18px",
         boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+        minWidth: isUser ? undefined : "60%",
       }}>
         <div style={{ fontSize: "11px", fontWeight: 600, color: isUser ? "#60a5fa" : "#a78bfa", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
           {isUser ? "You" : "ALEX"}
@@ -86,6 +127,7 @@ const ChatMessage = ({ message }) => {
         <div className="alex-content" dangerouslySetInnerHTML={{ __html: renderContent(message.content) }}
           style={{ color: "#e2e8f0", fontSize: "14px", lineHeight: "1.6", wordBreak: "break-word" }}
         />
+        {!isUser && message.result?.report && <ReportPanel report={message.result.report} />}
         {message.result && <ResultCard result={message.result} />}
         <div style={{ fontSize: "11px", color: "#475569", marginTop: "8px", textAlign: isUser ? "left" : "right" }}>
           {new Date(message.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -96,11 +138,13 @@ const ChatMessage = ({ message }) => {
 };
 
 const SUGGESTED_COMMANDS = [
-  { label: "🛡️ Scan Security", command: "Scan the project for security vulnerabilities and fix them" },
-  { label: "🔍 Inspect Project", command: "Inspect the project structure and show me everything" },
+  { label: "🔍 Deep Analysis (read-only)", command: "Ab actual project analysis karo. Sirf actual code inspect karke detailed findings do — har bug, security vulnerability, code quality issue, severity + file path ke saath. Koi file modify/delete mat karo." },
+  { label: "📊 Show Last Report", command: "report dikhao" },
+  { label: "📁 Files with Issues", command: "file ka path btao jis jis file me kami h" },
+  { label: "🔬 Verify Top Findings", command: "findings verify karo" },
+  { label: "🛡️ Scan Security", command: "Scan the project for security vulnerabilities" },
   { label: "🧪 Run Tests", command: "Run the test suite and report results" },
   { label: "📊 System Status", command: "Show me the complete system status" },
-  { label: "🐛 Find & Fix Bugs", command: "Find and fix all bugs in the project" },
   { label: "📋 Show Incidents", command: "Show all active incidents and their details" },
 ];
 
@@ -372,10 +416,12 @@ const AlexChat = ({ isOpen, onClose }) => {
         .alex-content p:last-child { margin-bottom: 0; }
         .alex-content ul { margin: 6px 0; padding-left: 20px; }
         .alex-content li { margin-bottom: 4px; }
+        .alex-content h3 { margin: 10px 0 6px 0; color: #c4b5fd; font-size: 13px; }
         .alex-content code { background: rgba(139,92,246,0.15); padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: 'JetBrains Mono', monospace; color: #c4b5fd; }
         .alex-content pre { background: #0a0a1a; border: 1px solid rgba(139,92,246,0.15); border-radius: 8px; padding: 12px; overflow-x: auto; margin: 8px 0; }
         .alex-content pre code { background: none; padding: 0; color: #e2e8f0; font-size: 12px; }
         .alex-content strong { color: #f1f5f9; }
+        .alex-report ul { padding-left: 16px; }
         textarea::placeholder { color: #475569; }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
