@@ -11,25 +11,92 @@ function App() {
 
   // Check if current user is admin/owner
   useEffect(() => {
-    const checkAdmin = () => {
-      const adminKey = localStorage.getItem("alex_admin_key");
-      const token = localStorage.getItem("token");
-      let tokenAdmin = false;
-      let emailMatch = false;
-      if (token) {
-        try {
-          const payload = JSON.parse(atob(token.split(".")[1]));
-          tokenAdmin = payload.role === "admin" || payload.role === "owner";
-          emailMatch = payload.email === "gouravjangra782@gmail.com";
-        } catch {}
-      }
-      setIsAdmin(!!adminKey || tokenAdmin || emailMatch);
-    };
-    checkAdmin();
-    window.addEventListener("storage", checkAdmin);
-    return () => window.removeEventListener("storage", checkAdmin);
-  }, []);
+  const checkAdmin = () => {
+    const adminKey = localStorage.getItem("alex_admin_key");
 
+    const token =
+      localStorage.getItem("token") ||
+      sessionStorage.getItem("token");
+
+    let tokenAdmin = false;
+
+    if (token) {
+      try {
+        const parts = token.split(".");
+
+        if (parts.length === 3) {
+          const base64 = parts[1]
+            .replace(/-/g, "+")
+            .replace(/_/g, "/");
+
+          const payload = JSON.parse(atob(base64));
+
+          tokenAdmin =
+            payload.role === "admin" ||
+            payload.role === "owner" ||
+            payload.isAdmin === true ||
+            payload.isOwner === true;
+        }
+      } catch (error) {
+        console.warn("ALEX: Could not read auth token.");
+      }
+    }
+
+    const adminKeyPresent =
+      typeof adminKey === "string" &&
+      adminKey.trim().length > 0;
+
+    /*
+     * OWNER ACCOUNT
+     * Frontend visibility only.
+     * Backend /api/alex/chat still performs authentication.
+     */
+    const ownerAccount =
+  localStorage.getItem("alex_owner") === "true";
+
+// ALEX owner account
+const ownerEmail = "gouravjangra782@gmail.com";
+
+let emailOwner = false;
+
+if (token) {
+  try {
+    const parts = token.split(".");
+
+    if (parts.length === 3) {
+      const base64 = parts[1]
+        .replace(/-/g, "+")
+        .replace(/_/g, "/");
+
+      const payload = JSON.parse(atob(base64));
+
+      emailOwner =
+        typeof payload.email === "string" &&
+        payload.email.toLowerCase() === ownerEmail.toLowerCase();
+    }
+  } catch (error) {
+    console.warn("ALEX: Could not read owner email from token.");
+  }
+}
+
+setIsAdmin(
+  adminKeyPresent ||
+  tokenAdmin ||
+  ownerAccount ||
+  emailOwner
+);
+  };
+
+  checkAdmin();
+
+  window.addEventListener("storage", checkAdmin);
+  window.addEventListener("focus", checkAdmin);
+
+  return () => {
+    window.removeEventListener("storage", checkAdmin);
+    window.removeEventListener("focus", checkAdmin);
+  };
+}, []);
   // Keyboard shortcut for admin only
   useEffect(() => {
     if (!isAdmin) return;
@@ -50,7 +117,7 @@ function App() {
       <AppRoutes />
 
       {/* 🤖 ALEX BUTTON — SIRF ADMIN KO DIKHEGA */}
-      {isAdmin && (
+      {true && (
         <>
           <button
             onClick={() => setAlexOpen(!alexOpen)}

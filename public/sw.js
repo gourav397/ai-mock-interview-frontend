@@ -1,41 +1,21 @@
-const CACHE = "ai-interview-v3"; // ⭐ version badla — purana cache apne aap delete hoga
+// Service Worker disabled.
+// ALEX/frontend deployment ke dauran stale-cache issues avoid karne ke liye.
 
-self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/", "/index.html", "/manifest.json"])));
+self.addEventListener("install", () => {
   self.skipWaiting();
 });
 
-self.addEventListener("activate", (e) => {
-  e.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
-});
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    (async () => {
+      const registrations = await self.registration;
+      await self.clients.claim();
 
-self.addEventListener("fetch", (e) => {
-  if (e.request.method !== "GET") return;
+      const keys = await caches.keys();
 
-  const url = new URL(e.request.url);
-
-  // ⭐⭐ SIRF apne domain ke requests handle karo — baaki sab chhodo
-  if (url.origin !== self.location.origin) return;
-
-  if (url.pathname.startsWith("/api/")) return;
-
-  if (e.request.mode === "navigate") {
-    e.respondWith(fetch(e.request).catch(() => caches.match("/index.html")));
-    return;
-  }
-
-  e.respondWith(
-    caches.match(e.request).then((hit) =>
-      hit || fetch(e.request).then((r) => {
-        const copy = r.clone();
-        caches.open(CACHE).then((c) => c.put(e.request, copy));
-        return r;
-      })
-    )
+      await Promise.all(
+        keys.map((key) => caches.delete(key))
+      );
+    })()
   );
 });

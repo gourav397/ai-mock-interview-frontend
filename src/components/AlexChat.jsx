@@ -3,7 +3,9 @@ import axios from "axios";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const SESSION_KEY = "alex_chat_session_id";
+const OWNER_MEMORY_SESSION_KEY = "alex_owner_memory_session_id";
 const ADMIN_KEY_STORAGE_KEY = "alex_admin_key";
+const WINDOWS_AGENT_TOKEN_STORAGE_KEY = "alex_windows_agent_token";
 const ALEX_AVATAR = "🤖";
 const USER_AVATAR = "👤";
 
@@ -26,7 +28,117 @@ const renderContent = (content) => {
   return `<p>${html}</p>`;
 };
 
-// Report panel — collapsible, scrollable, markdown-rendered
+// ============================================================
+// FIXED CODE BLOCK — copy + download buttons
+// ============================================================
+const FixedCodeBlock = ({ code, fileName }) => {
+  const [copied, setCopied] = useState(false);
+  if (!code) return null;
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback
+      const ta = document.createElement("textarea");
+      ta.value = code;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleDownload = () => {
+    const blob = new Blob([code], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName || "fixed-code.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div style={{ marginTop: "10px", borderRadius: "10px", overflow: "hidden", border: "1px solid rgba(16,185,129,0.35)" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(16,185,129,0.12)", padding: "8px 12px" }}>
+        <span style={{ color: "#34d399", fontSize: "12px", fontWeight: 700 }}>✅ FIXED CODE — {fileName}</span>
+        <div style={{ display: "flex", gap: "6px" }}>
+          <button onClick={handleCopy} style={{ background: copied ? "#10b981" : "rgba(255,255,255,0.1)", border: "none", color: "#fff", borderRadius: "6px", padding: "4px 10px", fontSize: "11px", cursor: "pointer" }}>
+            {copied ? "✓ Copied!" : "📋 Copy"}
+          </button>
+          <button onClick={handleDownload} style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "#e2e8f0", borderRadius: "6px", padding: "4px 10px", fontSize: "11px", cursor: "pointer" }}>
+            ⬇ Download
+          </button>
+        </div>
+      </div>
+      <pre style={{ margin: 0, padding: "12px", background: "#0a0a1a", color: "#a7f3d0", fontSize: "11.5px", lineHeight: "1.5", overflowX: "auto", maxHeight: "300px", overflowY: "auto", fontFamily: "'JetBrains Mono', monospace" }}>
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+};
+
+// ============================================================
+// UPLOAD RESULT PANEL — analysis + fixed code
+// ============================================================
+const UploadResultPanel = ({ upload }) => {
+  const [showOriginal, setShowOriginal] = useState(false);
+  if (!upload || !upload.success) return null;
+  const { analysis, fixed, original, fileName, language } = upload;
+
+  const sevColor = { CRITICAL: "#ef4444", HIGH: "#f97316", MEDIUM: "#f59e0b", LOW: "#64748b" };
+
+  return (
+    <div style={{ marginTop: "10px", borderRadius: "10px", overflow: "hidden", border: "1px solid rgba(139,92,246,0.3)", background: "#0d0d21" }}>
+      <div style={{ padding: "10px 14px", background: "rgba(139,92,246,0.12)", borderBottom: "1px solid rgba(139,92,246,0.2)" }}>
+        <div style={{ color: "#c4b5fd", fontWeight: 700, fontSize: "13px" }}>📁 {fileName} — {language}</div>
+        {analysis?.summary && <div style={{ color: "#94a3b8", fontSize: "12px", marginTop: "4px" }}>{analysis.summary}</div>}
+        <div style={{ display: "flex", gap: "10px", marginTop: "6px", flexWrap: "wrap" }}>
+          {["CRITICAL", "HIGH", "MEDIUM", "LOW"].map(s => (
+            <span key={s} style={{ color: sevColor[s], fontSize: "11px", fontWeight: 600 }}>
+              {s}: {analysis?.severityCount?.[s] || 0}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {analysis?.issues?.length > 0 && (
+        <div style={{ padding: "10px 14px", maxHeight: "180px", overflowY: "auto" }}>
+          {analysis.issues.slice(0, 10).map((issue, i) => (
+            <div key={i} style={{ marginBottom: "8px", fontSize: "12px" }}>
+              <span style={{ color: sevColor[issue.severity], fontWeight: 700 }}>[{issue.severity}]</span>{" "}
+              <span style={{ color: "#e2e8f0" }}>{issue.title}</span>
+              {issue.line && <span style={{ color: "#64748b" }}> (line {issue.line})</span>}
+              <div style={{ color: "#94a3b8", fontSize: "11px", marginTop: "2px" }}>→ {issue.fix}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {fixed?.code && <FixedCodeBlock code={fixed.code} fileName={"fixed_" + fileName} />}
+      {fixed?.syntaxValid === false && (
+        <div style={{ padding: "8px 14px", color: "#f59e0b", fontSize: "12px" }}>⚠️ {fixed.syntaxError}</div>
+      )}
+
+      <div style={{ padding: "8px 14px", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+        <button onClick={() => setShowOriginal(p => !p)} style={{ background: "none", border: "none", color: "#64748b", fontSize: "11px", cursor: "pointer" }}>
+          {showOriginal ? "▲ Hide original code" : "▼ Show original code"}
+        </button>
+        {showOriginal && (
+          <pre style={{ marginTop: "6px", padding: "10px", background: "#0a0a1a", color: "#94a3b8", fontSize: "11px", maxHeight: "200px", overflowY: "auto", borderRadius: "6px" }}>
+            <code>{original.code}</code>
+          </pre>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const ReportPanel = ({ report }) => {
   const [expanded, setExpanded] = useState(false);
   if (!report) return null;
@@ -63,36 +175,243 @@ const ReportPanel = ({ report }) => {
 
 const ResultCard = ({ result }) => {
   if (!result) return null;
+
   const getStatusColor = () => {
     if (result.success) return "#10b981";
     if (result.status === "confirmation_required") return "#f59e0b";
     return "#ef4444";
   };
+
   const getIcon = () => {
     if (result.success) return "✅";
     if (result.status === "confirmation_required") return "⚠️";
     if (result.status === "denied") return "🚫";
     return "❌";
   };
+
+  const systemInfo =
+  result?.data ||
+  result?.result ||
+  result?.result?.result ||
+  null;
+
   return (
-    <div style={{
-      borderLeft: `4px solid ${getStatusColor()}`,
-      background: "#1a1a2e", borderRadius: "8px", padding: "12px 16px",
-      marginTop: "8px", fontSize: "13px",
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+    <div
+      style={{
+        borderLeft: `4px solid ${getStatusColor()}`,
+        background: "#1a1a2e",
+        borderRadius: "8px",
+        padding: "12px 16px",
+        marginTop: "8px",
+        fontSize: "13px",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          marginBottom: "8px",
+        }}
+      >
         <span>{getIcon()}</span>
-        <span style={{ color: getStatusColor(), fontWeight: 600, fontSize: "13px" }}>
-          {result.status === "completed" ? "COMPLETED" :
-           result.status === "confirmation_required" ? "CONFIRMATION REQUIRED" :
-           result.status === "denied" ? "DENIED" : "FAILED"}
+
+        <span
+          style={{
+            color: getStatusColor(),
+            fontWeight: 600,
+            fontSize: "13px",
+          }}
+        >
+          {result.status === "completed"
+            ? "COMPLETED"
+            : result.status === "confirmation_required"
+            ? "CONFIRMATION REQUIRED"
+            : result.status === "denied"
+            ? "DENIED"
+            : "FAILED"}
         </span>
+
         {result.durationMs && (
-          <span style={{ color: "#64748b", fontSize: "12px", marginLeft: "auto" }}>⏱ {result.durationMs}ms</span>
+          <span
+            style={{
+              color: "#64748b",
+              fontSize: "12px",
+              marginLeft: "auto",
+            }}
+          >
+            ⏱ {result.durationMs}ms
+          </span>
         )}
       </div>
-      {result.message && <div style={{ color: "#94a3b8", fontSize: "13px", marginBottom: "4px" }}>{result.message}</div>}
-      {result.error && <div style={{ color: "#ef4444", fontSize: "13px", marginBottom: "4px" }}>{result.error}</div>}
+
+      {result.message && (
+        <div
+          style={{
+            color: "#94a3b8",
+            fontSize: "13px",
+            marginBottom: "8px",
+          }}
+        >
+          {result.message}
+        </div>
+      )}
+
+      {result.error && (
+        <div
+          style={{
+            color: "#ef4444",
+            fontSize: "13px",
+            marginBottom: "8px",
+          }}
+        >
+          {result.error}
+        </div>
+      )}
+
+      {/* =====================================================
+          SYSTEM INFO
+          ===================================================== */}
+      {systemInfo && (
+        <div
+          style={{
+            marginTop: "10px",
+            background: "rgba(255,255,255,0.04)",
+            border: "1px solid rgba(139,92,246,0.18)",
+            borderRadius: "10px",
+            padding: "12px",
+          }}
+        >
+          <div
+            style={{
+              color: "#c4b5fd",
+              fontWeight: 700,
+              fontSize: "13px",
+              marginBottom: "10px",
+            }}
+          >
+            💻 Laptop Information
+          </div>
+
+          {systemInfo.os && (
+            <div style={{ marginBottom: "10px" }}>
+              <div style={{ color: "#a78bfa", fontWeight: 600 }}>
+                🪟 Operating System
+              </div>
+
+              <div style={{ color: "#cbd5e1", marginTop: "4px" }}>
+                Type: {systemInfo.os.type || "Unknown"}
+                <br />
+                Version: {systemInfo.os.release || "Unknown"}
+                <br />
+                Architecture: {systemInfo.os.arch || "Unknown"}
+                <br />
+                Hostname: {systemInfo.os.hostname || "Unknown"}
+                <br />
+                Uptime: {systemInfo.os.uptimeMinutes ?? "Unknown"} minutes
+              </div>
+            </div>
+          )}
+
+          {systemInfo.cpu && (
+            <div style={{ marginBottom: "10px" }}>
+              <div style={{ color: "#a78bfa", fontWeight: 600 }}>
+                🧠 CPU
+              </div>
+
+              <div style={{ color: "#cbd5e1", marginTop: "4px" }}>
+                Model: {systemInfo.cpu.model || "Unknown"}
+                <br />
+                Cores: {systemInfo.cpu.cores ?? "Unknown"}
+                <br />
+                Load:{" "}
+                {Array.isArray(systemInfo.cpu.loadAvg)
+                  ? systemInfo.cpu.loadAvg.join(" / ")
+                  : "Unknown"}
+              </div>
+            </div>
+          )}
+
+          {systemInfo.memory && (
+            <div style={{ marginBottom: "10px" }}>
+              <div style={{ color: "#a78bfa", fontWeight: 600 }}>
+                🧮 RAM
+              </div>
+
+              <div style={{ color: "#cbd5e1", marginTop: "4px" }}>
+                Total: {systemInfo.memory.totalGB ?? "Unknown"} GB
+                <br />
+                Free: {systemInfo.memory.freeGB ?? "Unknown"} GB
+                <br />
+                Used by ALEX:{" "}
+                {systemInfo.memory.usedByAlexMB ?? "Unknown"} MB
+              </div>
+            </div>
+          )}
+
+          {systemInfo.disk && (
+            <div style={{ marginBottom: "10px" }}>
+              <div style={{ color: "#a78bfa", fontWeight: 600 }}>
+                💾 Disk
+              </div>
+
+              <div style={{ color: "#cbd5e1", marginTop: "4px" }}>
+                {Array.isArray(systemInfo.disk) ? (
+                  systemInfo.disk.map((disk, index) => (
+                    <div key={index} style={{ marginBottom: "6px" }}>
+                      {disk.drive || `Drive ${index + 1}`}
+                      <br />
+                      Total: {disk.totalGB ?? "?"} GB
+                      <br />
+                      Free: {disk.freeGB ?? "?"} GB
+                    </div>
+                  ))
+                ) : (
+                  String(systemInfo.disk)
+                )}
+              </div>
+            </div>
+          )}
+
+          {systemInfo.user && (
+            <div style={{ marginBottom: "10px" }}>
+              <div style={{ color: "#a78bfa", fontWeight: 600 }}>
+                👤 User
+              </div>
+
+              <div style={{ color: "#cbd5e1", marginTop: "4px" }}>
+                Username: {systemInfo.user}
+                <br />
+                Home: {systemInfo.homeDir || "Unknown"}
+              </div>
+            </div>
+          )}
+
+          {systemInfo.node && (
+            <div style={{ marginBottom: "10px" }}>
+              <div style={{ color: "#a78bfa", fontWeight: 600 }}>
+                🟢 Node.js
+              </div>
+
+              <div style={{ color: "#cbd5e1", marginTop: "4px" }}>
+                {systemInfo.node}
+              </div>
+            </div>
+          )}
+
+          {systemInfo.networkInterfaces && (
+            <div>
+              <div style={{ color: "#a78bfa", fontWeight: 600 }}>
+                🌐 Network Interfaces
+              </div>
+
+              <div style={{ color: "#cbd5e1", marginTop: "4px" }}>
+                {systemInfo.networkInterfaces.join(", ")}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -127,8 +446,15 @@ const ChatMessage = ({ message }) => {
         <div className="alex-content" dangerouslySetInnerHTML={{ __html: renderContent(message.content) }}
           style={{ color: "#e2e8f0", fontSize: "14px", lineHeight: "1.6", wordBreak: "break-word" }}
         />
+        {!isUser && message.uploadResult && <UploadResultPanel upload={message.uploadResult} />}
         {!isUser && message.result?.report && <ReportPanel report={message.result.report} />}
-        {message.result && <ResultCard result={message.result} />}
+        {message.result &&
+  message.result.route !== "chat" &&
+  message.result.result?.route !== "chat" &&
+  message.result.intent?.intent !== "GENERAL_CHAT" &&
+  message.result.result?.intent?.intent !== "GENERAL_CHAT" && (
+    <ResultCard result={message.result} />
+  )}
         <div style={{ fontSize: "11px", color: "#475569", marginTop: "8px", textAlign: isUser ? "left" : "right" }}>
           {new Date(message.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
         </div>
@@ -138,29 +464,55 @@ const ChatMessage = ({ message }) => {
 };
 
 const SUGGESTED_COMMANDS = [
+  { label: "📤 Upload & Fix a File", command: "__UPLOAD__" },
   { label: "🔍 Deep Analysis (read-only)", command: "Ab actual project analysis karo. Sirf actual code inspect karke detailed findings do — har bug, security vulnerability, code quality issue, severity + file path ke saath. Koi file modify/delete mat karo." },
-  { label: "📊 Show Last Report", command: "report dikhao" },
-  { label: "📁 Files with Issues", command: "file ka path btao jis jis file me kami h" },
-  { label: "🔬 Verify Top Findings", command: "findings verify karo" },
-  { label: "🛡️ Scan Security", command: "Scan the project for security vulnerabilities" },
-  { label: "🧪 Run Tests", command: "Run the test suite and report results" },
+  { label: "💻 Laptop Info", command: "Mere laptop ka complete info do — CPU, RAM, disk, OS sab kuch" },
+  { label: "🌐 Browser Me Kholo", command: "google.com browser me khol do" },
   { label: "📊 System Status", command: "Show me the complete system status" },
-  { label: "📋 Show Incidents", command: "Show all active incidents and their details" },
+  { label: "📁 Folder Dikhao", command: "Mere desktop ka folder list dikhao" },
+  { label: "🧪 Run Tests", command: "Run the test suite and report results" },
+  { label: "🛡️ Security Scan", command: "Scan the project for security vulnerabilities" },
 ];
 
 const AlexChat = ({ isOpen, onClose }) => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [sessionId, setSessionId] = useState(() => localStorage.getItem(SESSION_KEY));
+  const [uploading, setUploading] = useState(false);
+  const [sessionId, setSessionId] = useState(() => {
+  const saved = localStorage.getItem(SESSION_KEY);
+  if (saved) return saved;
+
+  const ownerSession =
+    localStorage.getItem(OWNER_MEMORY_SESSION_KEY);
+
+  if (ownerSession) {
+    localStorage.setItem(SESSION_KEY, ownerSession);
+    return ownerSession;
+  }
+
+  const newSession =
+    `alex_owner_${crypto.randomUUID()}`;
+
+  localStorage.setItem(SESSION_KEY, newSession);
+  localStorage.setItem(OWNER_MEMORY_SESSION_KEY, newSession);
+
+  return newSession;
+});
   const [error, setError] = useState(null);
   const [metrics, setMetrics] = useState(null);
   const [showAdminKeyInput, setShowAdminKeyInput] = useState(false);
   const [adminKeyInput, setAdminKeyInput] = useState("");
   const [adminKey, setAdminKey] = useState(() => localStorage.getItem(ADMIN_KEY_STORAGE_KEY) || "");
+  const [windowsAgentToken, setWindowsAgentToken] = useState(
+  () => localStorage.getItem(WINDOWS_AGENT_TOKEN_STORAGE_KEY) || ""
+);
+const [showWindowsAgentTokenInput, setShowWindowsAgentTokenInput] = useState(false);
+const [windowsAgentTokenInput, setWindowsAgentTokenInput] = useState("");
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const adminKeyInputRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -211,9 +563,140 @@ const AlexChat = ({ isOpen, onClose }) => {
     }]);
   };
 
+const handleSaveWindowsAgentToken = () => {
+  const token = windowsAgentTokenInput.trim();
+
+  if (!token) {
+    setMessages(prev => [
+      ...prev,
+      {
+        role: "alex",
+        type: "system",
+        content: "❌ Windows Agent pairing token required.",
+        timestamp: new Date().toISOString(),
+      },
+    ]);
+    return;
+  }
+
+  localStorage.setItem(
+    WINDOWS_AGENT_TOKEN_STORAGE_KEY,
+    token
+  );
+
+  setWindowsAgentToken(token);
+  setWindowsAgentTokenInput("");
+  setShowWindowsAgentTokenInput(false);
+
+  setMessages(prev => [
+    ...prev,
+    {
+      role: "alex",
+      type: "system",
+      content:
+        "✅ Windows Agent paired successfully. Local laptop tools are now available to authorized ALEX commands.",
+      timestamp: new Date().toISOString(),
+    },
+  ]);
+};
+
+const handleClearWindowsAgentToken = () => {
+  localStorage.removeItem(
+    WINDOWS_AGENT_TOKEN_STORAGE_KEY
+  );
+
+  setWindowsAgentToken("");
+  setWindowsAgentTokenInput("");
+  setShowWindowsAgentTokenInput(false);
+
+  setMessages(prev => [
+    ...prev,
+    {
+      role: "alex",
+      type: "system",
+      content: "🖥️ Windows Agent pairing cleared.",
+      timestamp: new Date().toISOString(),
+    },
+  ]);
+};
+
+  // ============================================================
+  // FILE UPLOAD — analyze + fix
+  // ============================================================
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || uploading) return;
+
+    if (!adminKey && !localStorage.getItem("token")) {
+      setShowAdminKeyInput(true);
+      return;
+    }
+
+    setUploading(true);
+    setLoading(true);
+
+    const userMsg = {
+      role: "user", type: "message",
+      content: `📤 Uploaded file: **${file.name}** (${(file.size / 1024).toFixed(1)} KB)`,
+      timestamp: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, userMsg]);
+    setMessages(prev => [...prev, { role: "alex", type: "typing", content: "...", timestamp: new Date().toISOString() }]);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("hint", input.trim());
+
+      const { data } = await axios.post(
+        `${API_BASE}/api/alex/upload/analyze`,
+        formData,
+        { headers: { "x-admin-key": adminKey || undefined } }
+      );
+
+      setMessages(prev => prev.filter(m => m.type !== "typing"));
+
+      if (data.success) {
+        const parts = [];
+        if (data.analysis?.summary) parts.push(data.analysis.summary);
+        if (data.fixed?.syntaxValid) parts.push("\n✅ **Fixed code passed syntax validation.** Copy/download karke use karo.");
+        if (data.explanation) parts.push("\n" + data.explanation);
+
+        setMessages(prev => [...prev, {
+          role: "alex", type: "upload-result",
+          content: parts.join("\n") || "File processed.",
+          uploadResult: data,
+          timestamp: new Date().toISOString(),
+        }]);
+      } else {
+        setMessages(prev => [...prev, {
+          role: "alex", type: "error",
+          content: `❌ **Upload failed:** ${data.error || data.message || "Unknown error"}`,
+          timestamp: new Date().toISOString(),
+        }]);
+      }
+      setInput("");
+    } catch (err) {
+      setMessages(prev => prev.filter(m => m.type !== "typing"));
+      setMessages(prev => [...prev, {
+        role: "alex", type: "error",
+        content: `❌ **Upload error:** ${err.response?.data?.message || err.message}`,
+        timestamp: new Date().toISOString(),
+      }]);
+    } finally {
+      setUploading(false);
+      setLoading(false);
+    }
+  };
+
   const sendMessage = async (text) => {
     const message = text || input.trim();
     if (!message || loading) return;
+    const currentWindowsAgentToken =
+  localStorage.getItem(WINDOWS_AGENT_TOKEN_STORAGE_KEY) ||
+  windowsAgentToken ||
+  "";
 
     if (!adminKey && !localStorage.getItem("token")) {
       setShowAdminKeyInput(true);
@@ -229,12 +712,15 @@ const AlexChat = ({ isOpen, onClose }) => {
     setMessages(prev => [...prev, { role: "alex", type: "typing", content: "...", timestamp: new Date().toISOString() }]);
 
     try {
-      const { data } = await axios.post(
-        `${API_BASE}/api/alex/chat`,
-        { message, sessionId },
-        { headers: getAuthHeaders() }
-      );
-
+     const { data } = await axios.post(
+  `${API_BASE}/api/alex/chat`,
+  {
+    message,
+    sessionId,
+    windowsAgentToken: currentWindowsAgentToken,
+  },
+  { headers: getAuthHeaders() }
+);
       setMessages(prev => prev.filter(m => m.type !== "typing"));
 
       if (data.success) {
@@ -283,7 +769,13 @@ const AlexChat = ({ isOpen, onClose }) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   };
 
-  const handleSuggested = (cmd) => sendMessage(cmd);
+  const handleSuggested = (cmd) => {
+    if (cmd === "__UPLOAD__") {
+      fileInputRef.current?.click();
+      return;
+    }
+    sendMessage(cmd);
+  };
 
   const resetSession = async () => {
     if (sessionId) {
@@ -329,6 +821,27 @@ const AlexChat = ({ isOpen, onClose }) => {
           {adminKey && (
             <button onClick={handleClearAdminKey} title="Clear Key" style={{ background: "rgba(239,68,68,0.15)", border: "none", color: "#fca5a5", width: "32px", height: "32px", borderRadius: "8px", cursor: "pointer", fontSize: "12px" }}>🔑</button>
           )}
+          <button
+  onClick={() => {
+    setShowWindowsAgentTokenInput(true);
+    setShowAdminKeyInput(false);
+  }}
+  title="Windows Agent Settings"
+  style={{
+    background: windowsAgentToken
+      ? "rgba(16,185,129,0.15)"
+      : "rgba(255,255,255,0.1)",
+    border: "none",
+    color: windowsAgentToken ? "#6ee7b7" : "#cbd5e1",
+    width: "32px",
+    height: "32px",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontSize: "14px",
+  }}
+>
+  🖥️
+</button>
           {metrics && (
             <div style={{ color: "#64748b", fontSize: "11px", textAlign: "right" }}>
               <div>{metrics.commandsExecuted} ✅</div>
@@ -342,6 +855,91 @@ const AlexChat = ({ isOpen, onClose }) => {
 
       {/* MESSAGES */}
       <div style={{ flex: 1, overflowY: "auto", padding: "20px", scrollBehavior: "smooth" }}>
+      {showWindowsAgentTokenInput && (
+  <div
+    style={{
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      height: "100%",
+      padding: "20px",
+    }}
+  >
+    <div style={{ fontSize: "48px", marginBottom: "16px" }}>🖥️</div>
+
+    <div
+      style={{
+        fontSize: "18px",
+        fontWeight: 600,
+        color: "#e2e8f0",
+        marginBottom: "8px",
+      }}
+    >
+      Windows Agent Pairing
+    </div>
+
+    <div
+      style={{
+        fontSize: "13px",
+        color: "#94a3b8",
+        maxWidth: "320px",
+        textAlign: "center",
+        marginBottom: "20px",
+      }}
+    >
+      Paste the pairing token shown when your local Windows Agent starts.
+    </div>
+
+    <div
+      style={{
+        display: "flex",
+        gap: "8px",
+        width: "100%",
+        maxWidth: "350px",
+      }}
+    >
+      <input
+        type="password"
+        value={windowsAgentTokenInput}
+        onChange={(e) => setWindowsAgentTokenInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            handleSaveWindowsAgentToken();
+          }
+        }}
+        placeholder="Paste Windows Agent token..."
+        style={{
+          flex: 1,
+          background: "rgba(255,255,255,0.05)",
+          border: "1px solid rgba(16,185,129,0.3)",
+          borderRadius: "10px",
+          padding: "10px 14px",
+          color: "#e2e8f0",
+          fontSize: "14px",
+          outline: "none",
+          fontFamily: "monospace",
+        }}
+      />
+
+      <button
+        onClick={handleSaveWindowsAgentToken}
+        style={{
+          background: "linear-gradient(135deg, #10b981, #047857)",
+          border: "none",
+          borderRadius: "10px",
+          padding: "10px 20px",
+          color: "#fff",
+          cursor: "pointer",
+          fontSize: "14px",
+          fontWeight: 600,
+        }}
+      >
+        Pair
+      </button>
+    </div>
+  </div>
+)}
         {showAdminKeyInput && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", padding: "20px" }}>
             <div style={{ fontSize: "48px", marginBottom: "16px" }}>🔑</div>
@@ -367,13 +965,13 @@ const AlexChat = ({ isOpen, onClose }) => {
               ALEX is ready
             </div>
             <div style={{ fontSize: "13px", color: "#64748b", maxWidth: "300px", marginBottom: "24px" }}>
-              {adminKey ? "Give me a goal!" : "Enter your admin key to start."}
+              {adminKey ? "File upload karke fix karwa ya kuch bhi bolo!" : "Enter your admin key to start."}
             </div>
             {adminKey && (
               <div style={{ display: "flex", flexDirection: "column", gap: "6px", width: "100%" }}>
                 {SUGGESTED_COMMANDS.map((cmd, i) => (
                   <button key={i} onClick={() => handleSuggested(cmd.command)}
-                    style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: "8px", padding: "8px 14px", color: "#c4b5fd", cursor: "pointer", fontSize: "13px", textAlign: "left" }}>
+                    style={{ background: cmd.command === "__UPLOAD__" ? "rgba(16,185,129,0.12)" : "rgba(139,92,246,0.1)", border: cmd.command === "__UPLOAD__" ? "1px solid rgba(16,185,129,0.3)" : "1px solid rgba(139,92,246,0.2)", borderRadius: "8px", padding: "8px 14px", color: cmd.command === "__UPLOAD__" ? "#6ee7b7" : "#c4b5fd", cursor: "pointer", fontSize: "13px", textAlign: "left" }}>
                     {cmd.label}
                   </button>
                 ))}
@@ -398,8 +996,25 @@ const AlexChat = ({ isOpen, onClose }) => {
       {/* INPUT */}
       <div style={{ padding: "12px 16px", borderTop: "1px solid rgba(139,92,246,0.15)", background: "rgba(15,15,35,0.95)", flexShrink: 0 }}>
         <div style={{ display: "flex", gap: "8px" }}>
+          {/* hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".js,.mjs,.cjs,.jsx,.ts,.tsx,.py,.java,.cpp,.c,.html,.css,.json,.sql,.sh,.md,.go,.rb,.php"
+            style={{ display: "none" }}
+            onChange={handleFileSelect}
+          />
+          {/* upload button */}
+          <button
+            onClick={() => !adminKey ? setShowAdminKeyInput(true) : fileInputRef.current?.click()}
+            disabled={uploading}
+            title="Upload file — ALEX samjhega, fix karega, wapas dega"
+            style={{ width: "42px", height: "42px", borderRadius: "10px", background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", color: "#34d399", cursor: "pointer", fontSize: "18px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+          >
+            {uploading ? "⏳" : "📎"}
+          </button>
           <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
-            placeholder={adminKey ? "Tell ALEX what to do..." : "Click 🔑 to set admin key first..."} rows={1}
+            placeholder={adminKey ? "Tell ALEX what to do... (ya 📎 se file upload karo)" : "Click 🔑 to set admin key first..."} rows={1}
             disabled={loading || !adminKey}
             style={{ flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: "10px", padding: "10px 14px", color: "#e2e8f0", fontSize: "14px", resize: "none", outline: "none", minHeight: "42px", fontFamily: "inherit", opacity: adminKey ? 1 : 0.5 }}
           />

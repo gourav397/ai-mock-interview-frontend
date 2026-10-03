@@ -106,16 +106,6 @@ createRoot(document.getElementById("root")).render(
   </StrictMode>
 );
 
-// PWA: Service worker SIRF production (deploy) mein
-if ("serviceWorker" in navigator && import.meta.env.PROD) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker
-      .register("/sw.js")
-      .then(() => console.log("✅ Service Worker registered"))
-      .catch((err) => console.log("SW register fail:", err));
-  });
-}
-
 // Dev mein purana SW unregister — cache/HMR problems khatam
 if ("serviceWorker" in navigator && import.meta.env.DEV) {
   navigator.serviceWorker.getRegistrations().then((regs) =>

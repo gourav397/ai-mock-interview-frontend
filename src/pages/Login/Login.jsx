@@ -31,16 +31,23 @@ function Login() {
       // ─── FIX: Store token BOTH separately AND inside user object ───
       localStorage.setItem("token", res.data.token);
 
-      // ✅ IMPORTANT: Include token inside the user object so
-      //    the Axios interceptor AND useVoiceInterview hook
-      //    can find it via: JSON.parse(user).token
-      localStorage.setItem(
-        "user",
-        JSON.stringify({
-          ...res.data.user,
-          token: res.data.token,
-        })
-      );
+// Store user + token
+localStorage.setItem(
+  "user",
+  JSON.stringify({
+    ...res.data.user,
+    token: res.data.token,
+  })
+);
+
+// ALEX owner access
+const loggedInEmail = String(res.data.user?.email || "").toLowerCase();
+
+if (loggedInEmail === "gouravjangra782@gmail.com") {
+  localStorage.setItem("alex_owner", "true");
+} else {
+  localStorage.removeItem("alex_owner");
+}
 
       alert("Login Successful");
 
