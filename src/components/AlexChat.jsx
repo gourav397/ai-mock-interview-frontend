@@ -1,28 +1,109 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+} from "react";
 import axios from "axios";
 
 const API_BASE =
-  import.meta.env.VITE_API_URL || "http://localhost:5000";
+  import.meta.env.VITE_API_URL ||
+  "http://localhost:5000";
 
-const SESSION_KEY = "alex_chat_session_id";
-const OWNER_MEMORY_SESSION_KEY = "alex_owner_memory_session_id";
-const ADMIN_KEY_STORAGE_KEY = "alex_admin_key";
-const WINDOWS_AGENT_TOKEN_STORAGE_KEY = "alex_windows_agent_token";
+const SESSION_KEY =
+  "alex_chat_session_id";
+
+const OWNER_MEMORY_SESSION_KEY =
+  "alex_owner_memory_session_id";
+
+const ADMIN_KEY_STORAGE_KEY =
+  "alex_admin_key";
+
+const WINDOWS_AGENT_TOKEN_STORAGE_KEY =
+  "alex_windows_agent_token";
+
+// ============================================================
+// IDENTITY-SCOPED SESSION STORAGE
+// ============================================================
+
+const getIdentityStorageKey = () => {
+  try {
+    const token =
+      localStorage.getItem("token");
+
+    if (token) {
+      const parts =
+        token.split(".");
+
+      if (parts.length === 3) {
+        const payload =
+          JSON.parse(
+            decodeURIComponent(
+              atob(
+                parts[1]
+                  .replace(/-/g, "+")
+                  .replace(/_/g, "/")
+              )
+                .split("")
+                .map(
+                  (c) =>
+                    `%${(
+                      "00" +
+                      c.charCodeAt(
+                        0
+                      ).toString(16)
+                    ).slice(-2)}`
+                )
+                .join("")
+            )
+          );
+
+        if (
+          payload?.id ||
+          payload?._id ||
+          payload?.userId
+        ) {
+          return String(
+            payload.id ||
+              payload._id ||
+              payload.userId
+          );
+        }
+      }
+    }
+  } catch {}
+
+  return localStorage.getItem(
+    ADMIN_KEY_STORAGE_KEY
+  )
+    ? "admin-key-owner"
+    : "anonymous";
+};
+
+const getSessionStorageKey = () =>
+  `${SESSION_KEY}:${getIdentityStorageKey()}`;
+
+const getOwnerMemoryStorageKey = () =>
+  `${OWNER_MEMORY_SESSION_KEY}:${getIdentityStorageKey()}`;
 
 const ALEX_AVATAR = "🤖";
 const USER_AVATAR = "👤";
 
 // ============================================================
-// SAFE ID
+// SAFE SESSION ID
 // ============================================================
+
 const createSessionId = () => {
   try {
-    if (typeof crypto !== "undefined" && crypto.randomUUID) {
-      return `alex_owner_${crypto.randomUUID()}`;
+    if (
+      typeof crypto !== "undefined" &&
+      crypto.randomUUID
+    ) {
+      return `alex_chat_${crypto.randomUUID()}`;
     }
   } catch {}
 
-  return `alex_owner_${Date.now()}_${Math.random()
+  return `alex_chat_${Date.now()}_${Math.random()
     .toString(36)
     .slice(2)}`;
 };
@@ -30,6 +111,7 @@ const createSessionId = () => {
 // ============================================================
 // HTML ESCAPE
 // ============================================================
+
 const escapeHtml = (value) => {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -42,6 +124,7 @@ const escapeHtml = (value) => {
 // ============================================================
 // CONTENT RENDERER
 // ============================================================
+
 const renderContent = (content) => {
   if (!content) return "";
 
@@ -52,18 +135,54 @@ const renderContent = (content) => {
       /```(\w*)\n([\s\S]*?)```/g,
       '<pre><code class="language-$1">$2</code></pre>'
     )
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
-    .replace(/^## (.+)$/gm, "<h3>$1</h3>")
-    .replace(/^# (.+)$/gm, "<h3>$1</h3>")
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-    .replace(/^•\s(.+)$/gm, "<li>$1</li>")
-    .replace(/^[-*]\s(.+)$/gm, "<li>$1</li>")
-    .replace(/^\d+\.\s(.+)$/gm, "<li>$1</li>")
-    .replace(/(<li>.*<\/li>\n?)+/g, "<ul>$&</ul>")
-    .replace(/\n\n/g, "</p><p>")
-    .replace(/\n/g, "<br/>");
+    .replace(
+      /`([^`]+)`/g,
+      "<code>$1</code>"
+    )
+    .replace(
+      /^### (.+)$/gm,
+      "<h3>$1</h3>"
+    )
+    .replace(
+      /^## (.+)$/gm,
+      "<h3>$1</h3>"
+    )
+    .replace(
+      /^# (.+)$/gm,
+      "<h3>$1</h3>"
+    )
+    .replace(
+      /\*\*([^*]+)\*\*/g,
+      "<strong>$1</strong>"
+    )
+    .replace(
+      /\*([^*]+)\*/g,
+      "<em>$1</em>"
+    )
+    .replace(
+      /^•\s(.+)$/gm,
+      "<li>$1</li>"
+    )
+    .replace(
+      /^[-*]\s(.+)$/gm,
+      "<li>$1</li>"
+    )
+    .replace(
+      /^\d+\.\s(.+)$/gm,
+      "<li>$1</li>"
+    )
+    .replace(
+      /(<li>.*<\/li>\n?)+/g,
+      "<ul>$&</ul>"
+    )
+    .replace(
+      /\n\n/g,
+      "</p><p>"
+    )
+    .replace(
+      /\n/g,
+      "<br/>"
+    );
 
   return `<p>${html}</p>`;
 };
@@ -71,26 +190,53 @@ const renderContent = (content) => {
 // ============================================================
 // FIXED CODE BLOCK
 // ============================================================
-const FixedCodeBlock = ({ code, fileName }) => {
-  const [copied, setCopied] = useState(false);
+
+const FixedCodeBlock = ({
+  code,
+  fileName,
+}) => {
+  const [copied, setCopied] =
+    useState(false);
 
   if (!code) return null;
 
   const handleCopy = async () => {
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(code);
+      if (
+        navigator.clipboard?.writeText
+      ) {
+        await navigator.clipboard.writeText(
+          code
+        );
       } else {
-        const ta = document.createElement("textarea");
+        const ta =
+          document.createElement(
+            "textarea"
+          );
+
         ta.value = code;
-        document.body.appendChild(ta);
+
+        document.body.appendChild(
+          ta
+        );
+
         ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
+
+        document.execCommand(
+          "copy"
+        );
+
+        document.body.removeChild(
+          ta
+        );
       }
 
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+
+      setTimeout(
+        () => setCopied(false),
+        2000
+      );
     } catch {
       setCopied(false);
     }
@@ -98,21 +244,45 @@ const FixedCodeBlock = ({ code, fileName }) => {
 
   const handleDownload = () => {
     try {
-      const blob = new Blob([code], {
-        type: "text/plain;charset=utf-8",
-      });
+      const blob = new Blob(
+        [code],
+        {
+          type:
+            "text/plain;charset=utf-8",
+        }
+      );
 
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
+      const url =
+        URL.createObjectURL(blob);
+
+      const a =
+        document.createElement(
+          "a"
+        );
 
       a.href = url;
-      a.download = fileName || "fixed-code.txt";
 
-      document.body.appendChild(a);
+      a.download =
+        fileName ||
+        "fixed-code.txt";
+
+      document.body.appendChild(
+        a
+      );
+
       a.click();
-      document.body.removeChild(a);
 
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      document.body.removeChild(
+        a
+      );
+
+      setTimeout(
+        () =>
+          URL.revokeObjectURL(
+            url
+          ),
+        1000
+      );
     } catch {}
   };
 
@@ -122,15 +292,18 @@ const FixedCodeBlock = ({ code, fileName }) => {
         marginTop: "10px",
         borderRadius: "10px",
         overflow: "hidden",
-        border: "1px solid rgba(16,185,129,0.35)",
+        border:
+          "1px solid rgba(16,185,129,0.35)",
       }}
     >
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between",
-          background: "rgba(16,185,129,0.12)",
+          justifyContent:
+            "space-between",
+          background:
+            "rgba(16,185,129,0.12)",
           padding: "8px 12px",
           gap: "8px",
         }}
@@ -141,39 +314,59 @@ const FixedCodeBlock = ({ code, fileName }) => {
             fontSize: "12px",
             fontWeight: 700,
             overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
+            textOverflow:
+              "ellipsis",
+            whiteSpace:
+              "nowrap",
           }}
         >
-          ✅ FIXED CODE — {fileName || "fixed-code"}
+          ✅ FIXED CODE —{" "}
+          {fileName ||
+            "fixed-code"}
         </span>
 
-        <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+        <div
+          style={{
+            display: "flex",
+            gap: "6px",
+            flexShrink: 0,
+          }}
+        >
           <button
-            onClick={handleCopy}
+            onClick={
+              handleCopy
+            }
             style={{
-              background: copied
-                ? "#10b981"
-                : "rgba(255,255,255,0.1)",
+              background:
+                copied
+                  ? "#10b981"
+                  : "rgba(255,255,255,0.1)",
               border: "none",
               color: "#fff",
               borderRadius: "6px",
-              padding: "4px 10px",
+              padding:
+                "4px 10px",
               fontSize: "11px",
               cursor: "pointer",
             }}
           >
-            {copied ? "✓ Copied!" : "📋 Copy"}
+            {copied
+              ? "✓ Copied!"
+              : "📋 Copy"}
           </button>
 
           <button
-            onClick={handleDownload}
+            onClick={
+              handleDownload
+            }
             style={{
-              background: "rgba(255,255,255,0.1)",
+              background:
+                "rgba(255,255,255,0.1)",
               border: "none",
               color: "#e2e8f0",
               borderRadius: "6px",
-              padding: "4px 10px",
+              padding:
+                "4px 10px",
               fontSize: "11px",
               cursor: "pointer",
             }}
@@ -194,7 +387,8 @@ const FixedCodeBlock = ({ code, fileName }) => {
           overflowX: "auto",
           maxHeight: "300px",
           overflowY: "auto",
-          fontFamily: "'JetBrains Mono', monospace",
+          fontFamily:
+            "'JetBrains Mono', monospace",
         }}
       >
         <code>{code}</code>
@@ -206,10 +400,21 @@ const FixedCodeBlock = ({ code, fileName }) => {
 // ============================================================
 // UPLOAD RESULT PANEL
 // ============================================================
-const UploadResultPanel = ({ upload }) => {
-  const [showOriginal, setShowOriginal] = useState(false);
 
-  if (!upload || !upload.success) return null;
+const UploadResultPanel = ({
+  upload,
+}) => {
+  const [
+    showOriginal,
+    setShowOriginal,
+  ] = useState(false);
+
+  if (
+    !upload ||
+    !upload.success
+  ) {
+    return null;
+  }
 
   const {
     analysis,
@@ -232,15 +437,19 @@ const UploadResultPanel = ({ upload }) => {
         marginTop: "10px",
         borderRadius: "10px",
         overflow: "hidden",
-        border: "1px solid rgba(139,92,246,0.3)",
+        border:
+          "1px solid rgba(139,92,246,0.3)",
         background: "#0d0d21",
       }}
     >
       <div
         style={{
-          padding: "10px 14px",
-          background: "rgba(139,92,246,0.12)",
-          borderBottom: "1px solid rgba(139,92,246,0.2)",
+          padding:
+            "10px 14px",
+          background:
+            "rgba(139,92,246,0.12)",
+          borderBottom:
+            "1px solid rgba(139,92,246,0.2)",
         }}
       >
         <div
@@ -250,7 +459,12 @@ const UploadResultPanel = ({ upload }) => {
             fontSize: "13px",
           }}
         >
-          📁 {fileName || "Uploaded file"} — {language || "Unknown"}
+          📁{" "}
+          {fileName ||
+            "Uploaded file"}{" "}
+          —{" "}
+          {language ||
+            "Unknown"}
         </div>
 
         {analysis?.summary && (
@@ -270,110 +484,182 @@ const UploadResultPanel = ({ upload }) => {
             display: "flex",
             gap: "10px",
             marginTop: "6px",
-            flexWrap: "wrap",
+            flexWrap:
+              "wrap",
           }}
         >
-          {["CRITICAL", "HIGH", "MEDIUM", "LOW"].map((s) => (
+          {[
+            "CRITICAL",
+            "HIGH",
+            "MEDIUM",
+            "LOW",
+          ].map((s) => (
             <span
               key={s}
               style={{
-                color: sevColor[s],
-                fontSize: "11px",
+                color:
+                  sevColor[s],
+                fontSize:
+                  "11px",
                 fontWeight: 600,
               }}
             >
-              {s}: {analysis?.severityCount?.[s] || 0}
+              {s}:{" "}
+              {analysis
+                ?.severityCount?.[
+                s
+              ] || 0}
             </span>
           ))}
         </div>
       </div>
 
-      {analysis?.issues?.length > 0 && (
+      {analysis?.issues
+        ?.length > 0 && (
         <div
           style={{
-            padding: "10px 14px",
-            maxHeight: "180px",
-            overflowY: "auto",
+            padding:
+              "10px 14px",
+            maxHeight:
+              "180px",
+            overflowY:
+              "auto",
           }}
         >
-          {analysis.issues.slice(0, 10).map((issue, i) => (
-            <div
-              key={i}
-              style={{
-                marginBottom: "8px",
-                fontSize: "12px",
-              }}
-            >
-              <span
-                style={{
-                  color:
-                    sevColor[issue?.severity] || "#94a3b8",
-                  fontWeight: 700,
-                }}
-              >
-                [{issue?.severity || "INFO"}]
-              </span>{" "}
-
-              <span style={{ color: "#e2e8f0" }}>
-                {issue?.title || "Issue"}
-              </span>
-
-              {issue?.line && (
-                <span style={{ color: "#64748b" }}>
-                  {" "}
-                  (line {issue.line})
-                </span>
-              )}
-
-              {issue?.fix && (
+          {analysis.issues
+            .slice(0, 10)
+            .map(
+              (
+                issue,
+                i
+              ) => (
                 <div
+                  key={i}
                   style={{
-                    color: "#94a3b8",
-                    fontSize: "11px",
-                    marginTop: "2px",
+                    marginBottom:
+                      "8px",
+                    fontSize:
+                      "12px",
                   }}
                 >
-                  → {issue.fix}
+                  <span
+                    style={{
+                      color:
+                        sevColor[
+                          issue?.severity
+                        ] ||
+                        "#94a3b8",
+                      fontWeight:
+                        700,
+                    }}
+                  >
+                    [
+                    {issue?.severity ||
+                      "INFO"}
+                    ]
+                  </span>{" "}
+
+                  <span
+                    style={{
+                      color:
+                        "#e2e8f0",
+                    }}
+                  >
+                    {issue?.title ||
+                      "Issue"}
+                  </span>
+
+                  {issue?.line && (
+                    <span
+                      style={{
+                        color:
+                          "#64748b",
+                      }}
+                    >
+                      {" "}
+                      (line{" "}
+                      {
+                        issue.line
+                      })
+                    </span>
+                  )}
+
+                  {issue?.fix && (
+                    <div
+                      style={{
+                        color:
+                          "#94a3b8",
+                        fontSize:
+                          "11px",
+                        marginTop:
+                          "2px",
+                      }}
+                    >
+                      →{" "}
+                      {
+                        issue.fix
+                      }
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          ))}
+              )
+            )}
         </div>
       )}
 
       {fixed?.code && (
         <FixedCodeBlock
-          code={fixed.code}
-          fileName={`fixed_${fileName || "code.txt"}`}
+          code={
+            fixed.code
+          }
+          fileName={
+            `fixed_${fileName || "code"}`
+          }
         />
       )}
 
-      {fixed?.syntaxValid === false && (
+      {fixed?.syntaxValid ===
+        false && (
         <div
           style={{
-            padding: "8px 14px",
-            color: "#f59e0b",
-            fontSize: "12px",
+            padding:
+              "8px 14px",
+            color:
+              "#f59e0b",
+            fontSize:
+              "12px",
           }}
         >
-          ⚠️ {fixed.syntaxError || "Syntax validation failed."}
+          ⚠️{" "}
+          {fixed.syntaxError ||
+            "Syntax validation failed."}
         </div>
       )}
 
       <div
         style={{
-          padding: "8px 14px",
-          borderTop: "1px solid rgba(255,255,255,0.05)",
+          padding:
+            "8px 14px",
+          borderTop:
+            "1px solid rgba(255,255,255,0.05)",
         }}
       >
         <button
-          onClick={() => setShowOriginal((p) => !p)}
+          onClick={() =>
+            setShowOriginal(
+              (p) => !p
+            )
+          }
           style={{
-            background: "none",
+            background:
+              "none",
             border: "none",
-            color: "#64748b",
-            fontSize: "11px",
-            cursor: "pointer",
+            color:
+              "#64748b",
+            fontSize:
+              "11px",
+            cursor:
+              "pointer",
           }}
         >
           {showOriginal
@@ -381,22 +667,35 @@ const UploadResultPanel = ({ upload }) => {
             : "▼ Show original code"}
         </button>
 
-        {showOriginal && original?.code && (
-          <pre
-            style={{
-              marginTop: "6px",
-              padding: "10px",
-              background: "#0a0a1a",
-              color: "#94a3b8",
-              fontSize: "11px",
-              maxHeight: "200px",
-              overflowY: "auto",
-              borderRadius: "6px",
-            }}
-          >
-            <code>{original.code}</code>
-          </pre>
-        )}
+        {showOriginal &&
+          original?.code && (
+            <pre
+              style={{
+                marginTop:
+                  "6px",
+                padding:
+                  "10px",
+                background:
+                  "#0a0a1a",
+                color:
+                  "#94a3b8",
+                fontSize:
+                  "11px",
+                maxHeight:
+                  "200px",
+                overflowY:
+                  "auto",
+                borderRadius:
+                  "6px",
+              }}
+            >
+              <code>
+                {
+                  original.code
+                }
+              </code>
+            </pre>
+          )}
       </div>
     </div>
   );
@@ -405,71 +704,103 @@ const UploadResultPanel = ({ upload }) => {
 // ============================================================
 // REPORT PANEL
 // ============================================================
-const ReportPanel = ({ report }) => {
-  const [expanded, setExpanded] = useState(false);
+
+const ReportPanel = ({
+  report,
+}) => {
+  const [
+    expanded,
+    setExpanded,
+  ] = useState(false);
 
   if (!report) return null;
-
-  const preview =
-    report.length > 2500
-      ? `${report.slice(
-          0,
-          2500
-        )}\n\n_...report truncated. Click Expand for full report._`
-      : report;
 
   return (
     <div
       style={{
         marginTop: "10px",
-        border: "1px solid rgba(139,92,246,0.3)",
+        border:
+          "1px solid rgba(139,92,246,0.3)",
         borderRadius: "10px",
         overflow: "hidden",
-        background: "#0d0d21",
+        background:
+          "#0d0d21",
       }}
     >
       <button
-        onClick={() => setExpanded((prev) => !prev)}
+        onClick={() =>
+          setExpanded(
+            (prev) => !prev
+          )
+        }
         style={{
           width: "100%",
-          background: "rgba(139,92,246,0.15)",
+          background:
+            "rgba(139,92,246,0.15)",
           border: "none",
-          padding: "10px 14px",
-          color: "#c4b5fd",
-          fontSize: "13px",
+          padding:
+            "10px 14px",
+          color:
+            "#c4b5fd",
+          fontSize:
+            "13px",
           fontWeight: 600,
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
+          cursor:
+            "pointer",
+          display:
+            "flex",
+          alignItems:
+            "center",
+          justifyContent:
+            "space-between",
         }}
       >
         <span>
           📊 Analysis Report (
-          {Math.ceil(report.length / 1000)}k chars)
+          {Math.ceil(
+            report.length /
+              1000
+          )}
+          k chars)
         </span>
 
         <span>
-          {expanded ? "▲ Collapse" : "▼ Expand"}
+          {expanded
+            ? "▲ Collapse"
+            : "▼ Expand"}
         </span>
       </button>
 
       <div
         className="alex-content alex-report"
         dangerouslySetInnerHTML={{
-          __html: renderContent(
-            expanded ? report : preview
-          ),
+          __html:
+            renderContent(
+              expanded
+                ? report
+                : `${report.slice(
+                    0,
+                    2500
+                  )}\n\n_report truncated. Click Expand for full report._`
+            ),
         }}
         style={{
           padding: "14px",
           color: "#e2e8f0",
-          fontSize: "12.5px",
-          lineHeight: "1.6",
-          wordBreak: "break-word",
-          maxHeight: expanded ? "400px" : "260px",
-          overflowY: "auto",
-          whiteSpace: "normal",
+          fontSize:
+            "12.5px",
+          lineHeight:
+            "1.6",
+          wordBreak:
+            "break-word",
+          maxHeight:
+            expanded
+              ? "400px"
+              : "260px",
+          overflowY:
+            "auto",
+          whiteSpace:
+            "normal",
         }}
       />
     </div>
@@ -479,28 +810,61 @@ const ReportPanel = ({ report }) => {
 // ============================================================
 // RESULT CARD
 // ============================================================
-const ResultCard = ({ result }) => {
+
+const ResultCard = ({
+  result,
+}) => {
   if (!result) return null;
 
-  const getStatusColor = () => {
-    if (result.success) return "#10b981";
-    if (result.status === "confirmation_required")
-      return "#f59e0b";
-    if (result.status === "denied") return "#ef4444";
-    return "#ef4444";
-  };
+  const getStatusColor =
+    () => {
+      if (
+        result.success
+      ) {
+        return "#10b981";
+      }
+
+      if (
+        result.status ===
+        "confirmation_required"
+      ) {
+        return "#f59e0b";
+      }
+
+      if (
+        result.status ===
+        "denied"
+      ) {
+        return "#ef4444";
+      }
+
+      return "#ef4444";
+    };
 
   const getIcon = () => {
-    if (result.success) return "✅";
-    if (result.status === "confirmation_required")
+    if (result.success)
+      return "✅";
+
+    if (
+      result.status ===
+      "confirmation_required"
+    ) {
       return "⚠️";
-    if (result.status === "denied") return "🚫";
+    }
+
+    if (
+      result.status ===
+      "denied"
+    ) {
+      return "🚫";
+    }
+
     return "❌";
   };
 
   const systemInfo =
     result?.data ||
-    result?.result?.data ||
+    result?.result ||
     result?.result?.result ||
     null;
 
@@ -508,35 +872,51 @@ const ResultCard = ({ result }) => {
     <div
       style={{
         borderLeft: `4px solid ${getStatusColor()}`,
-        background: "#1a1a2e",
-        borderRadius: "8px",
-        padding: "12px 16px",
-        marginTop: "8px",
-        fontSize: "13px",
+        background:
+          "#1a1a2e",
+        borderRadius:
+          "8px",
+        padding:
+          "12px 16px",
+        marginTop:
+          "8px",
+        fontSize:
+          "13px",
       }}
     >
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
+          display:
+            "flex",
+          alignItems:
+            "center",
           gap: "8px",
-          marginBottom: "8px",
+          marginBottom:
+            "8px",
         }}
       >
-        <span>{getIcon()}</span>
+        <span>
+          {getIcon()}
+        </span>
 
         <span
           style={{
-            color: getStatusColor(),
-            fontWeight: 600,
-            fontSize: "13px",
+            color:
+              getStatusColor(),
+            fontWeight:
+              600,
+            fontSize:
+              "13px",
           }}
         >
-          {result.status === "completed"
+          {result.status ===
+          "completed"
             ? "COMPLETED"
-            : result.status === "confirmation_required"
+            : result.status ===
+              "confirmation_required"
             ? "CONFIRMATION REQUIRED"
-            : result.status === "denied"
+            : result.status ===
+              "denied"
             ? "DENIED"
             : "FAILED"}
         </span>
@@ -544,12 +924,19 @@ const ResultCard = ({ result }) => {
         {result.durationMs && (
           <span
             style={{
-              color: "#64748b",
-              fontSize: "12px",
-              marginLeft: "auto",
+              color:
+                "#64748b",
+              fontSize:
+                "12px",
+              marginLeft:
+                "auto",
             }}
           >
-            ⏱ {result.durationMs}ms
+            ⏱{" "}
+            {
+              result.durationMs
+            }
+            ms
           </span>
         )}
       </div>
@@ -557,21 +944,29 @@ const ResultCard = ({ result }) => {
       {result.message && (
         <div
           style={{
-            color: "#94a3b8",
-            fontSize: "13px",
-            marginBottom: "8px",
+            color:
+              "#94a3b8",
+            fontSize:
+              "13px",
+            marginBottom:
+              "8px",
           }}
         >
-          {result.message}
+          {
+            result.message
+          }
         </div>
       )}
 
       {result.error && (
         <div
           style={{
-            color: "#ef4444",
-            fontSize: "13px",
-            marginBottom: "8px",
+            color:
+              "#ef4444",
+            fontSize:
+              "13px",
+            marginBottom:
+              "8px",
           }}
         >
           {result.error}
@@ -581,30 +976,46 @@ const ResultCard = ({ result }) => {
       {systemInfo && (
         <div
           style={{
-            marginTop: "10px",
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid rgba(139,92,246,0.18)",
-            borderRadius: "10px",
-            padding: "12px",
+            marginTop:
+              "10px",
+            background:
+              "rgba(255,255,255,0.04)",
+            border:
+              "1px solid rgba(139,92,246,0.18)",
+            borderRadius:
+              "10px",
+            padding:
+              "12px",
           }}
         >
           <div
             style={{
-              color: "#c4b5fd",
-              fontWeight: 700,
-              fontSize: "13px",
-              marginBottom: "10px",
+              color:
+                "#c4b5fd",
+              fontWeight:
+                700,
+              fontSize:
+                "13px",
+              marginBottom:
+                "10px",
             }}
           >
             💻 Laptop Information
           </div>
 
           {systemInfo.os && (
-            <div style={{ marginBottom: "10px" }}>
+            <div
+              style={{
+                marginBottom:
+                  "10px",
+              }}
+            >
               <div
                 style={{
-                  color: "#a78bfa",
-                  fontWeight: 600,
+                  color:
+                    "#a78bfa",
+                  fontWeight:
+                    600,
                 }}
               >
                 🪟 Operating System
@@ -612,20 +1023,27 @@ const ResultCard = ({ result }) => {
 
               <div
                 style={{
-                  color: "#cbd5e1",
-                  marginTop: "4px",
+                  color:
+                    "#cbd5e1",
+                  marginTop:
+                    "4px",
                 }}
               >
-                Type: {systemInfo.os.type || "Unknown"}
+                Type:{" "}
+                {systemInfo.os.type ||
+                  "Unknown"}
                 <br />
                 Version:{" "}
-                {systemInfo.os.release || "Unknown"}
+                {systemInfo.os.release ||
+                  "Unknown"}
                 <br />
                 Architecture:{" "}
-                {systemInfo.os.arch || "Unknown"}
+                {systemInfo.os.arch ||
+                  "Unknown"}
                 <br />
                 Hostname:{" "}
-                {systemInfo.os.hostname || "Unknown"}
+                {systemInfo.os.hostname ||
+                  "Unknown"}
                 <br />
                 Uptime:{" "}
                 {systemInfo.os.uptimeMinutes ??
@@ -636,11 +1054,18 @@ const ResultCard = ({ result }) => {
           )}
 
           {systemInfo.cpu && (
-            <div style={{ marginBottom: "10px" }}>
+            <div
+              style={{
+                marginBottom:
+                  "10px",
+              }}
+            >
               <div
                 style={{
-                  color: "#a78bfa",
-                  fontWeight: 600,
+                  color:
+                    "#a78bfa",
+                  fontWeight:
+                    600,
                 }}
               >
                 🧠 CPU
@@ -648,19 +1073,24 @@ const ResultCard = ({ result }) => {
 
               <div
                 style={{
-                  color: "#cbd5e1",
-                  marginTop: "4px",
+                  color:
+                    "#cbd5e1",
+                  marginTop:
+                    "4px",
                 }}
               >
                 Model:{" "}
-                {systemInfo.cpu.model || "Unknown"}
+                {systemInfo.cpu.model ||
+                  "Unknown"}
                 <br />
                 Cores:{" "}
-                {systemInfo.cpu.cores ?? "Unknown"}
+                {systemInfo.cpu.cores ??
+                  "Unknown"}
                 <br />
                 Load:{" "}
                 {Array.isArray(
-                  systemInfo.cpu.loadAvg
+                  systemInfo.cpu
+                    .loadAvg
                 )
                   ? systemInfo.cpu.loadAvg.join(
                       " / "
@@ -671,11 +1101,18 @@ const ResultCard = ({ result }) => {
           )}
 
           {systemInfo.memory && (
-            <div style={{ marginBottom: "10px" }}>
+            <div
+              style={{
+                marginBottom:
+                  "10px",
+              }}
+            >
               <div
                 style={{
-                  color: "#a78bfa",
-                  fontWeight: 600,
+                  color:
+                    "#a78bfa",
+                  fontWeight:
+                    600,
                 }}
               >
                 🧮 RAM
@@ -683,22 +1120,27 @@ const ResultCard = ({ result }) => {
 
               <div
                 style={{
-                  color: "#cbd5e1",
-                  marginTop: "4px",
+                  color:
+                    "#cbd5e1",
+                  marginTop:
+                    "4px",
                 }}
               >
                 Total:{" "}
-                {systemInfo.memory.totalGB ??
+                {systemInfo.memory
+                  .totalGB ??
                   "Unknown"}{" "}
                 GB
                 <br />
                 Free:{" "}
-                {systemInfo.memory.freeGB ??
+                {systemInfo.memory
+                  .freeGB ??
                   "Unknown"}{" "}
                 GB
                 <br />
                 Used by ALEX:{" "}
-                {systemInfo.memory.usedByAlexMB ??
+                {systemInfo.memory
+                  .usedByAlexMB ??
                   "Unknown"}{" "}
                 MB
               </div>
@@ -706,11 +1148,18 @@ const ResultCard = ({ result }) => {
           )}
 
           {systemInfo.disk && (
-            <div style={{ marginBottom: "10px" }}>
+            <div
+              style={{
+                marginBottom:
+                  "10px",
+              }}
+            >
               <div
                 style={{
-                  color: "#a78bfa",
-                  fontWeight: 600,
+                  color:
+                    "#a78bfa",
+                  fontWeight:
+                    600,
                 }}
               >
                 💾 Disk
@@ -718,43 +1167,69 @@ const ResultCard = ({ result }) => {
 
               <div
                 style={{
-                  color: "#cbd5e1",
-                  marginTop: "4px",
+                  color:
+                    "#cbd5e1",
+                  marginTop:
+                    "4px",
                 }}
               >
-                {Array.isArray(systemInfo.disk) ? (
+                {Array.isArray(
+                  systemInfo.disk
+                ) ? (
                   systemInfo.disk.map(
-                    (disk, index) => (
+                    (
+                      disk,
+                      index
+                    ) => (
                       <div
-                        key={index}
+                        key={
+                          index
+                        }
                         style={{
-                          marginBottom: "6px",
+                          marginBottom:
+                            "6px",
                         }}
                       >
                         {disk.drive ||
-                          `Drive ${index + 1}`}
+                          `Drive ${
+                            index +
+                            1
+                          }`}
                         <br />
                         Total:{" "}
-                        {disk.totalGB ?? "?"} GB
+                        {disk.totalGB ??
+                          "?"}{" "}
+                        GB
                         <br />
                         Free:{" "}
-                        {disk.freeGB ?? "?"} GB
+                        {disk.freeGB ??
+                          "?"}{" "}
+                        GB
                       </div>
                     )
                   )
                 ) : (
-                  String(systemInfo.disk)
+                  String(
+                    systemInfo.disk
+                  )
                 )}
               </div>
             </div>
           )}
 
           {systemInfo.user && (
-            <div style={{ marginBottom: "10px" }}>
+            <div
+              style={{
+                marginBottom:
+                  "10px",
+              }}
+            >
               <div
                 style={{
-                  color: "#a78bfa",
-                  fontWeight: 600,
+                  color:
+                    "#a78bfa",
+                  fontWeight:
+                    600,
                 }}
               >
                 👤 User
@@ -762,24 +1237,37 @@ const ResultCard = ({ result }) => {
 
               <div
                 style={{
-                  color: "#cbd5e1",
-                  marginTop: "4px",
+                  color:
+                    "#cbd5e1",
+                  marginTop:
+                    "4px",
                 }}
               >
-                Username: {systemInfo.user}
+                Username:{" "}
+                {
+                  systemInfo.user
+                }
                 <br />
                 Home:{" "}
-                {systemInfo.homeDir || "Unknown"}
+                {systemInfo.homeDir ||
+                  "Unknown"}
               </div>
             </div>
           )}
 
           {systemInfo.node && (
-            <div style={{ marginBottom: "10px" }}>
+            <div
+              style={{
+                marginBottom:
+                  "10px",
+              }}
+            >
               <div
                 style={{
-                  color: "#a78bfa",
-                  fontWeight: 600,
+                  color:
+                    "#a78bfa",
+                  fontWeight:
+                    600,
                 }}
               >
                 🟢 Node.js
@@ -787,11 +1275,15 @@ const ResultCard = ({ result }) => {
 
               <div
                 style={{
-                  color: "#cbd5e1",
-                  marginTop: "4px",
+                  color:
+                    "#cbd5e1",
+                  marginTop:
+                    "4px",
                 }}
               >
-                {systemInfo.node}
+                {
+                  systemInfo.node
+                }
               </div>
             </div>
           )}
@@ -800,8 +1292,10 @@ const ResultCard = ({ result }) => {
             <div>
               <div
                 style={{
-                  color: "#a78bfa",
-                  fontWeight: 600,
+                  color:
+                    "#a78bfa",
+                  fontWeight:
+                    600,
                 }}
               >
                 🌐 Network Interfaces
@@ -809,8 +1303,10 @@ const ResultCard = ({ result }) => {
 
               <div
                 style={{
-                  color: "#cbd5e1",
-                  marginTop: "4px",
+                  color:
+                    "#cbd5e1",
+                  marginTop:
+                    "4px",
                 }}
               >
                 {Array.isArray(
@@ -834,114 +1330,186 @@ const ResultCard = ({ result }) => {
 // ============================================================
 // CHAT MESSAGE
 // ============================================================
-const ChatMessage = ({ message }) => {
-  const isUser = message.role === "user";
 
-  const isChatResult =
-    message.result?.route === "chat" ||
-    message.result?.result?.route === "chat" ||
-    message.result?.intent?.intent ===
-      "GENERAL_CHAT" ||
-    message.result?.result?.intent?.intent ===
-      "GENERAL_CHAT";
+const ChatMessage = ({
+  message,
+}) => {
+  const isUser =
+    message.role ===
+    "user";
 
   return (
     <div
       style={{
-        display: "flex",
+        display:
+          "flex",
         gap: "12px",
-        marginBottom: "20px",
-        flexDirection: isUser ? "row-reverse" : "row",
-        alignItems: "flex-start",
+        marginBottom:
+          "20px",
+        flexDirection:
+          isUser
+            ? "row-reverse"
+            : "row",
+        alignItems:
+          "flex-start",
       }}
     >
       <div
         style={{
           width: "36px",
           height: "36px",
-          borderRadius: "50%",
-          background: isUser ? "#3b82f6" : "#8b5cf6",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: "16px",
+          borderRadius:
+            "50%",
+          background:
+            isUser
+              ? "#3b82f6"
+              : "#8b5cf6",
+          display:
+            "flex",
+          alignItems:
+            "center",
+          justifyContent:
+            "center",
+          fontSize:
+            "16px",
           flexShrink: 0,
-          boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+          boxShadow:
+            "0 2px 8px rgba(0,0,0,0.3)",
         }}
       >
-        {isUser ? USER_AVATAR : ALEX_AVATAR}
+        {isUser
+          ? USER_AVATAR
+          : ALEX_AVATAR}
       </div>
 
       <div
         style={{
-          maxWidth: "80%",
-          background: isUser ? "#1e3a5f" : "#16213e",
-          borderRadius: isUser
-            ? "16px 16px 4px 16px"
-            : "16px 16px 16px 4px",
-          padding: "14px 18px",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
-          minWidth: isUser ? undefined : "60%",
+          maxWidth:
+            "80%",
+          background:
+            isUser
+              ? "#1e3a5f"
+              : "#16213e",
+          borderRadius:
+            isUser
+              ? "16px 16px 4px 16px"
+              : "16px 16px 16px 4px",
+          padding:
+            "14px 18px",
+          boxShadow:
+            "0 2px 8px rgba(0,0,0,0.2)",
+          minWidth:
+            isUser
+              ? undefined
+              : "60%",
         }}
       >
         <div
           style={{
-            fontSize: "11px",
-            fontWeight: 600,
-            color: isUser ? "#60a5fa" : "#a78bfa",
-            marginBottom: "6px",
-            textTransform: "uppercase",
-            letterSpacing: "0.5px",
+            fontSize:
+              "11px",
+            fontWeight:
+              600,
+            color:
+              isUser
+                ? "#60a5fa"
+                : "#a78bfa",
+            marginBottom:
+              "6px",
+            textTransform:
+              "uppercase",
+            letterSpacing:
+              "0.5px",
           }}
         >
-          {isUser ? "You" : "ALEX"}
+          {isUser
+            ? "You"
+            : "ALEX"}
         </div>
 
         <div
           className="alex-content"
           dangerouslySetInnerHTML={{
-            __html: renderContent(message.content),
+            __html:
+              renderContent(
+                message.content
+              ),
           }}
           style={{
-            color: "#e2e8f0",
-            fontSize: "14px",
-            lineHeight: "1.6",
-            wordBreak: "break-word",
+            color:
+              "#e2e8f0",
+            fontSize:
+              "14px",
+            lineHeight:
+              "1.6",
+            wordBreak:
+              "break-word",
           }}
         />
 
-        {!isUser && message.uploadResult && (
-          <UploadResultPanel
-            upload={message.uploadResult}
-          />
-        )}
-
-        {!isUser && message.result?.report && (
-          <ReportPanel
-            report={message.result.report}
-          />
-        )}
+        {!isUser &&
+          message.uploadResult && (
+            <UploadResultPanel
+              upload={
+                message.uploadResult
+              }
+            />
+          )}
 
         {!isUser &&
-          message.result &&
-          !isChatResult && (
-            <ResultCard result={message.result} />
+          message.result?.report && (
+            <ReportPanel
+              report={
+                message.result
+                  .report
+              }
+            />
+          )}
+
+        {message.result &&
+          message.result.route !==
+            "chat" &&
+          message.result
+            .result?.route !==
+            "chat" &&
+          message.result.intent
+            ?.intent !==
+            "GENERAL_CHAT" &&
+          message.result.result
+            ?.intent?.intent !==
+            "GENERAL_CHAT" && (
+            <ResultCard
+              result={
+                message.result
+              }
+            />
           )}
 
         <div
           style={{
-            fontSize: "11px",
-            color: "#475569",
-            marginTop: "8px",
-            textAlign: isUser ? "left" : "right",
+            fontSize:
+              "11px",
+            color:
+              "#475569",
+            marginTop:
+              "8px",
+            textAlign:
+              isUser
+                ? "left"
+                : "right",
           }}
         >
           {new Date(
             message.timestamp
-          ).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
+          ).toLocaleTimeString(
+            [],
+            {
+              hour:
+                "2-digit",
+              minute:
+                "2-digit",
+            }
+          )}
         </div>
       </div>
     </div>
@@ -949,45 +1517,55 @@ const ChatMessage = ({ message }) => {
 };
 
 // ============================================================
-// SUGGESTED COMMANDS
+// SUGGESTIONS
 // ============================================================
+
 const SUGGESTED_COMMANDS = [
   {
-    label: "📤 Upload & Fix a File",
-    command: "__UPLOAD__",
+    label:
+      "📤 Upload & Fix a File",
+    command:
+      "__UPLOAD__",
   },
   {
-    label: "🔍 Deep Analysis (read-only)",
+    label:
+      "🔍 Deep Analysis (read-only)",
     command:
       "Ab actual project analysis karo. Sirf actual code inspect karke detailed findings do — har bug, security vulnerability, code quality issue, severity + file path ke saath. Koi file modify/delete mat karo.",
   },
   {
-    label: "💻 Laptop Info",
+    label:
+      "💻 Laptop Info",
     command:
       "Mere laptop ka complete info do — CPU, RAM, disk, OS sab kuch",
   },
   {
-    label: "🌐 Browser Me Kholo",
+    label:
+      "🌐 Browser Me Kholo",
     command:
       "google.com browser me khol do",
   },
   {
-    label: "📊 System Status",
+    label:
+      "📊 System Status",
     command:
       "Show me the complete system status",
   },
   {
-    label: "📁 Folder Dikhao",
+    label:
+      "📁 Folder Dikhao",
     command:
       "Mere desktop ka folder list dikhao",
   },
   {
-    label: "🧪 Run Tests",
+    label:
+      "🧪 Run Tests",
     command:
       "Run the test suite and report results",
   },
   {
-    label: "🛡️ Security Scan",
+    label:
+      "🛡️ Security Scan",
     command:
       "Scan the project for security vulnerabilities",
   },
@@ -996,70 +1574,97 @@ const SUGGESTED_COMMANDS = [
 // ============================================================
 // MAIN ALEX CHAT
 // ============================================================
-const AlexChat = ({ isOpen, onClose }) => {
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
 
-  const [sessionId, setSessionId] = useState(() => {
+const AlexChat = ({
+  isOpen,
+  onClose,
+}) => {
+  const [messages, setMessages] =
+    useState([]);
+
+  const [input, setInput] =
+    useState("");
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [uploading, setUploading] =
+    useState(false);
+
+  const [
+    sessionId,
+    setSessionId,
+  ] = useState(() => {
     const saved =
-      localStorage.getItem(SESSION_KEY);
+      localStorage.getItem(
+        getSessionStorageKey()
+      );
 
     if (saved) return saved;
 
     const ownerSession =
       localStorage.getItem(
-        OWNER_MEMORY_SESSION_KEY
+        getOwnerMemoryStorageKey()
       );
 
     if (ownerSession) {
       localStorage.setItem(
-        SESSION_KEY,
+        getSessionStorageKey(),
         ownerSession
       );
 
       return ownerSession;
     }
 
-    const newSession = createSessionId();
+    const newSession =
+      createSessionId();
 
     localStorage.setItem(
-      SESSION_KEY,
+      getSessionStorageKey(),
       newSession
     );
 
     localStorage.setItem(
-      OWNER_MEMORY_SESSION_KEY,
+      getOwnerMemoryStorageKey(),
       newSession
     );
 
     return newSession;
   });
 
-  const [error, setError] = useState(null);
-  const [metrics, setMetrics] = useState(null);
+  const [error, setError] =
+    useState(null);
 
-  const [showAdminKeyInput, setShowAdminKeyInput] =
-    useState(false);
+  const [metrics, setMetrics] =
+    useState(null);
 
-  const [adminKeyInput, setAdminKeyInput] =
-    useState("");
+  const [
+    showAdminKeyInput,
+    setShowAdminKeyInput,
+  ] = useState(false);
 
-  const [adminKey, setAdminKey] = useState(
-    () =>
-      localStorage.getItem(
-        ADMIN_KEY_STORAGE_KEY
-      ) || ""
-  );
+  const [
+    adminKeyInput,
+    setAdminKeyInput,
+  ] = useState("");
 
-  const [windowsAgentToken, setWindowsAgentToken] =
+  const [adminKey, setAdminKey] =
     useState(
       () =>
         localStorage.getItem(
-          WINDOWS_AGENT_TOKEN_STORAGE_KEY
+          ADMIN_KEY_STORAGE_KEY
         ) || ""
     );
+
+  const [
+    windowsAgentToken,
+    setWindowsAgentToken,
+  ] = useState(
+    () =>
+      localStorage.getItem(
+        WINDOWS_AGENT_TOKEN_STORAGE_KEY
+      ) || ""
+  );
 
   const [
     showWindowsAgentTokenInput,
@@ -1071,96 +1676,150 @@ const AlexChat = ({ isOpen, onClose }) => {
     setWindowsAgentTokenInput,
   ] = useState("");
 
-  const messagesEndRef = useRef(null);
-  const inputRef = useRef(null);
-  const adminKeyInputRef = useRef(null);
-  const fileInputRef = useRef(null);
+  const messagesEndRef =
+    useRef(null);
+
+  const inputRef =
+    useRef(null);
+
+  const adminKeyInputRef =
+    useRef(null);
+
+  const fileInputRef =
+    useRef(null);
 
   // ==========================================================
-  // AUTH STATE
+  // AUTH
   // ==========================================================
-  const getToken = useCallback(() => {
-    try {
-      return (
-        localStorage.getItem("token") || ""
+
+  const getToken =
+    useCallback(() => {
+      try {
+        return (
+          localStorage.getItem(
+            "token"
+          ) || ""
+        );
+      } catch {
+        return "";
+      }
+    }, []);
+
+  const hasAuthentication =
+    useCallback(() => {
+      return Boolean(
+        getToken() ||
+          adminKey
       );
-    } catch {
-      return "";
-    }
-  }, []);
+    }, [
+      getToken,
+      adminKey,
+    ]);
 
-  const hasAuthentication = useCallback(() => {
-    return Boolean(getToken() || adminKey);
-  }, [getToken, adminKey]);
+  const authenticated =
+    hasAuthentication();
 
   // ==========================================================
-  // JSON API HEADERS
-  // JWT FIRST
+  // JSON HEADERS
   // ==========================================================
-  const getAuthHeaders = useCallback(() => {
-    const headers = {
-      "Content-Type": "application/json",
-    };
 
-    const token = getToken();
+  const getAuthHeaders =
+    useCallback(() => {
+      const headers = {
+        "Content-Type":
+          "application/json",
+      };
 
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    } else if (adminKey) {
-      headers["x-admin-key"] = adminKey;
-    }
+      const token =
+        getToken();
 
-    return headers;
-  }, [getToken, adminKey]);
+      if (token) {
+        headers.Authorization =
+          `Bearer ${token}`;
+      } else if (adminKey) {
+        headers[
+          "x-admin-key"
+        ] = adminKey;
+      }
+
+      return headers;
+    }, [
+      getToken,
+      adminKey,
+    ]);
 
   // ==========================================================
   // FORM DATA HEADERS
-  // IMPORTANT: DO NOT SET CONTENT-TYPE MANUALLY
+  // IMPORTANT:
+  // Do not manually set multipart Content-Type.
+  // Axios/browser adds boundary automatically.
   // ==========================================================
-  const getUploadAuthHeaders = useCallback(() => {
-    const headers = {};
 
-    const token = getToken();
+  const getUploadAuthHeaders =
+    useCallback(() => {
+      const headers = {};
 
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    } else if (adminKey) {
-      headers["x-admin-key"] = adminKey;
-    }
+      const token =
+        getToken();
 
-    return headers;
-  }, [getToken, adminKey]);
+      if (token) {
+        headers.Authorization =
+          `Bearer ${token}`;
+      } else if (adminKey) {
+        headers[
+          "x-admin-key"
+        ] = adminKey;
+      }
+
+      return headers;
+    }, [
+      getToken,
+      adminKey,
+    ]);
 
   // ==========================================================
   // SCROLL
   // ==========================================================
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({
-      behavior: "smooth",
-    });
-  }, []);
+
+  const scrollToBottom =
+    useCallback(() => {
+      messagesEndRef.current?.scrollIntoView(
+        {
+          behavior:
+            "smooth",
+        }
+      );
+    }, []);
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, scrollToBottom]);
+  }, [
+    messages,
+    scrollToBottom,
+  ]);
 
   // ==========================================================
   // FOCUS
   // ==========================================================
+
   useEffect(() => {
     if (!isOpen) return;
 
-    const timer = setTimeout(() => {
-      if (showAdminKeyInput) {
-        adminKeyInputRef.current?.focus();
-      } else if (
-        !showWindowsAgentTokenInput
+    setTimeout(() => {
+      if (
+        showWindowsAgentTokenInput
       ) {
+        return;
+      }
+
+      if (
+        showAdminKeyInput
+      ) {
+        adminKeyInputRef.current?.focus();
+      } else {
         inputRef.current?.focus();
       }
     }, 300);
-
-    return () => clearTimeout(timer);
   }, [
     isOpen,
     showAdminKeyInput,
@@ -1168,668 +1827,835 @@ const AlexChat = ({ isOpen, onClose }) => {
   ]);
 
   // ==========================================================
-  // ADMIN KEY SAVE
+  // SAVE ADMIN KEY
   // ==========================================================
-  const handleSaveAdminKey = () => {
-    const key = adminKeyInput.trim();
 
-    if (key.length < 4) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "alex",
-          type: "system",
-          content:
-            "❌ Admin key bahut short hai.",
-          timestamp: new Date().toISOString(),
-        },
-      ]);
+  const handleSaveAdminKey =
+    () => {
+      const key =
+        adminKeyInput.trim();
 
-      return;
-    }
+      if (key.length < 4) {
+        return;
+      }
 
-    setAdminKey(key);
+      setAdminKey(key);
 
-    localStorage.setItem(
-      ADMIN_KEY_STORAGE_KEY,
-      key
-    );
+      localStorage.setItem(
+        ADMIN_KEY_STORAGE_KEY,
+        key
+      );
 
-    setShowAdminKeyInput(false);
-    setAdminKeyInput("");
+      setShowAdminKeyInput(
+        false
+      );
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "alex",
-        type: "system",
-        content:
-          "✅ Admin key configured. Ab ALEX request bheji ja sakti hai.",
-        timestamp: new Date().toISOString(),
-      },
-    ]);
-  };
+      setAdminKeyInput("");
+
+      setMessages(
+        (prev) => [
+          ...prev,
+          {
+            role: "alex",
+            type: "system",
+            content:
+              "✅ Admin key configured. Server-side ADMIN_KEY must match.",
+            timestamp:
+              new Date().toISOString(),
+          },
+        ]
+      );
+    };
 
   // ==========================================================
   // CLEAR ADMIN KEY
   // ==========================================================
-  const handleClearAdminKey = () => {
-    localStorage.removeItem(
-      ADMIN_KEY_STORAGE_KEY
-    );
 
-    setAdminKey("");
+  const handleClearAdminKey =
+    () => {
+      localStorage.removeItem(
+        ADMIN_KEY_STORAGE_KEY
+      );
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "alex",
-        type: "system",
-        content: "🔑 Admin key cleared.",
-        timestamp: new Date().toISOString(),
-      },
-    ]);
-  };
+      setAdminKey("");
 
-  // ==========================================================
-  // WINDOWS AGENT SAVE
-  // ==========================================================
-  const handleSaveWindowsAgentToken = () => {
-    const token =
-      windowsAgentTokenInput.trim();
-
-    if (!token) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "alex",
-          type: "system",
-          content:
-            "❌ Windows Agent pairing token required.",
-          timestamp:
-            new Date().toISOString(),
-        },
-      ]);
-
-      return;
-    }
-
-    localStorage.setItem(
-      WINDOWS_AGENT_TOKEN_STORAGE_KEY,
-      token
-    );
-
-    setWindowsAgentToken(token);
-    setWindowsAgentTokenInput("");
-    setShowWindowsAgentTokenInput(false);
-
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "alex",
-        type: "system",
-        content:
-          "✅ Windows Agent paired successfully. Authorized ALEX commands ke liye local laptop tools available hain.",
-        timestamp:
-          new Date().toISOString(),
-      },
-    ]);
-  };
+      setMessages(
+        (prev) => [
+          ...prev,
+          {
+            role: "alex",
+            type: "system",
+            content:
+              "🔑 Admin key cleared.",
+            timestamp:
+              new Date().toISOString(),
+          },
+        ]
+      );
+    };
 
   // ==========================================================
-  // CLEAR WINDOWS AGENT
+  // WINDOWS AGENT TOKEN
   // ==========================================================
-  const handleClearWindowsAgentToken = () => {
-    localStorage.removeItem(
-      WINDOWS_AGENT_TOKEN_STORAGE_KEY
-    );
 
-    setWindowsAgentToken("");
-    setWindowsAgentTokenInput("");
-    setShowWindowsAgentTokenInput(false);
+  const handleSaveWindowsAgentToken =
+    () => {
+      const token =
+        windowsAgentTokenInput.trim();
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "alex",
-        type: "system",
-        content:
-          "🖥️ Windows Agent pairing cleared.",
-        timestamp:
-          new Date().toISOString(),
-      },
-    ]);
-  };
+      if (!token) {
+        setMessages(
+          (prev) => [
+            ...prev,
+            {
+              role: "alex",
+              type: "system",
+              content:
+                "❌ Windows Agent pairing token required.",
+              timestamp:
+                new Date().toISOString(),
+            },
+          ]
+        );
+
+        return;
+      }
+
+      localStorage.setItem(
+        WINDOWS_AGENT_TOKEN_STORAGE_KEY,
+        token
+      );
+
+      setWindowsAgentToken(
+        token
+      );
+
+      setWindowsAgentTokenInput(
+        ""
+      );
+
+      setShowWindowsAgentTokenInput(
+        false
+      );
+
+      setMessages(
+        (prev) => [
+          ...prev,
+          {
+            role: "alex",
+            type: "system",
+            content:
+              "✅ Windows Agent paired successfully. Local laptop tools are now available to authorized ALEX commands.",
+            timestamp:
+              new Date().toISOString(),
+          },
+        ]
+      );
+    };
+
+  const handleClearWindowsAgentToken =
+    () => {
+      localStorage.removeItem(
+        WINDOWS_AGENT_TOKEN_STORAGE_KEY
+      );
+
+      setWindowsAgentToken(
+        ""
+      );
+
+      setWindowsAgentTokenInput(
+        ""
+      );
+
+      setShowWindowsAgentTokenInput(
+        false
+      );
+
+      setMessages(
+        (prev) => [
+          ...prev,
+          {
+            role: "alex",
+            type: "system",
+            content:
+              "🖥️ Windows Agent pairing cleared.",
+            timestamp:
+              new Date().toISOString(),
+          },
+        ]
+      );
+    };
 
   // ==========================================================
   // FILE UPLOAD
   // ==========================================================
-  const handleFileSelect = async (e) => {
-    const file = e.target.files?.[0];
 
-    e.target.value = "";
+  const handleFileSelect =
+    async (e) => {
+      const file =
+        e.target.files?.[0];
 
-    if (!file || uploading) return;
-
-    if (!hasAuthentication()) {
-      setError(
-        "Login required. Pehle login karo."
-      );
-      return;
-    }
-
-    setError(null);
-    setUploading(true);
-    setLoading(true);
-
-    const userMsg = {
-      role: "user",
-      type: "message",
-      content: `📤 Uploaded file: **${
-        file.name
-      }** (${(file.size / 1024).toFixed(1)} KB)`,
-      timestamp: new Date().toISOString(),
-    };
-
-    const typingMsg = {
-      role: "alex",
-      type: "typing",
-      content: "...",
-      timestamp: new Date().toISOString(),
-    };
-
-    setMessages((prev) => [
-      ...prev,
-      userMsg,
-      typingMsg,
-    ]);
-
-    try {
-      const formData = new FormData();
-
-      formData.append("file", file);
-
-      const hint = input.trim();
-
-      if (hint) {
-        formData.append("hint", hint);
-      }
-
-      const response = await axios.post(
-        `${API_BASE}/api/alex/upload/analyze`,
-        formData,
-        {
-          headers:
-            getUploadAuthHeaders(),
-          timeout: 120000,
-        }
-      );
-
-      const data = response.data;
-
-      setMessages((prev) =>
-        prev.filter(
-          (m) => m.type !== "typing"
-        )
-      );
-
-      if (data?.success) {
-        const parts = [];
-
-        if (data.analysis?.summary) {
-          parts.push(
-            data.analysis.summary
-          );
-        }
-
-        if (data.fixed?.syntaxValid) {
-          parts.push(
-            "\n✅ **Fixed code passed syntax validation.** Copy/download karke use karo."
-          );
-        }
-
-        if (data.explanation) {
-          parts.push(
-            `\n${data.explanation}`
-          );
-        }
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "alex",
-            type: "upload-result",
-            content:
-              parts.join("\n") ||
-              "File processed successfully.",
-            uploadResult: data,
-            timestamp:
-              new Date().toISOString(),
-          },
-        ]);
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "alex",
-            type: "error",
-            content: `❌ **Upload failed:** ${
-              data?.error ||
-              data?.message ||
-              "Unknown error"
-            }`,
-            timestamp:
-              new Date().toISOString(),
-          },
-        ]);
-      }
-
-      setInput("");
-    } catch (err) {
-      setMessages((prev) =>
-        prev.filter(
-          (m) => m.type !== "typing"
-        )
-      );
-
-      const status =
-        err?.response?.status;
-
-      const serverMessage =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        err?.message ||
-        "Unknown upload error";
+      e.target.value = "";
 
       if (
-        status === 401 ||
-        status === 403
+        !file ||
+        uploading
       ) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "alex",
-            type: "error",
-            content:
-              `❌ **Authentication failed (${status})**\n\n${serverMessage}\n\nLogin session check karo.`,
-            timestamp:
-              new Date().toISOString(),
-          },
-        ]);
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "alex",
-            type: "error",
-            content:
-              `❌ **Upload error:** ${serverMessage}`,
-            timestamp:
-              new Date().toISOString(),
-          },
-        ]);
-      }
-    } finally {
-      setUploading(false);
-      setLoading(false);
-    }
-  };
-
-  // ==========================================================
-  // SEND MESSAGE
-  // ==========================================================
-  const sendMessage = async (text) => {
-    const message =
-      typeof text === "string"
-        ? text.trim()
-        : input.trim();
-
-    if (!message || loading) return;
-
-    if (!hasAuthentication()) {
-      setError(
-        "Login required. Pehle login karo."
-      );
-      return;
-    }
-
-    const currentWindowsAgentToken =
-      localStorage.getItem(
-        WINDOWS_AGENT_TOKEN_STORAGE_KEY
-      ) ||
-      windowsAgentToken ||
-      "";
-
-    setInput("");
-    setLoading(true);
-    setError(null);
-
-    const userMsg = {
-      role: "user",
-      type: "message",
-      content: message,
-      timestamp: new Date().toISOString(),
-    };
-
-    const typingMsg = {
-      role: "alex",
-      type: "typing",
-      content: "...",
-      timestamp: new Date().toISOString(),
-    };
-
-    setMessages((prev) => [
-      ...prev,
-      userMsg,
-      typingMsg,
-    ]);
-
-    try {
-      const response = await axios.post(
-        `${API_BASE}/api/alex/chat`,
-        {
-          message,
-          sessionId,
-          windowsAgentToken:
-            currentWindowsAgentToken,
-        },
-        {
-          headers: getAuthHeaders(),
-          timeout: 120000,
-        }
-      );
-
-      const data = response.data;
-
-      setMessages((prev) =>
-        prev.filter(
-          (m) => m.type !== "typing"
-        )
-      );
-
-      if (data?.sessionId) {
-        setSessionId(data.sessionId);
-
-        localStorage.setItem(
-          SESSION_KEY,
-          data.sessionId
-        );
-
-        localStorage.setItem(
-          OWNER_MEMORY_SESSION_KEY,
-          data.sessionId
-        );
-      }
-
-      if (data?.metrics) {
-        setMetrics(data.metrics);
-      }
-
-      if (data?.success) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "alex",
-            type: "result",
-            content:
-              data.response ||
-              data.message ||
-              "ALEX completed the request.",
-            result: data.result,
-            timestamp:
-              new Date().toISOString(),
-          },
-        ]);
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "alex",
-            type: "error",
-            content:
-              data?.response ||
-              data?.message ||
-              data?.error ||
-              "ALEX request failed.",
-            result: data.result,
-            timestamp:
-              new Date().toISOString(),
-          },
-        ]);
-      }
-    } catch (err) {
-      setMessages((prev) =>
-        prev.filter(
-          (m) => m.type !== "typing"
-        )
-      );
-
-      const status =
-        err?.response?.status;
-
-      const serverMsg =
-        err?.response?.data?.message ||
-        "";
-
-      const serverError =
-        err?.response?.data?.error ||
-        "";
-
-      const serverResponse =
-        err?.response?.data?.response ||
-        "";
-
-      // ======================================================
-      // 401 / 403
-      // ======================================================
-      if (
-        status === 401 ||
-        status === 403
-      ) {
-        /*
-         * IMPORTANT:
-         * Agar JWT present hai aur reject hua,
-         * admin key screen automatically nahi kholni.
-         */
-        const token = getToken();
-
-        if (token) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "alex",
-              type: "error",
-              content:
-                `❌ **Authentication failed (${status})**\n\n${
-                  serverMsg ||
-                  serverError ||
-                  "Login session invalid ya expired hai."
-                }\n\nPlease logout karke dobara login karo.`,
-              timestamp:
-                new Date().toISOString(),
-            },
-          ]);
-        } else if (adminKey) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "alex",
-              type: "error",
-              content:
-                `❌ **Access denied (${status})**\n\nSaved admin key server ne reject kar di.\n\nAdmin key clear karke dobara valid key set karo.`,
-              timestamp:
-                new Date().toISOString(),
-            },
-          ]);
-        } else {
-          setShowAdminKeyInput(true);
-
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "alex",
-              type: "error",
-              content:
-                `🔑 **Authentication required (${status})**\n\nLogin token nahi mila. Agar owner admin-key fallback use karna hai to key set karo.`,
-              timestamp:
-                new Date().toISOString(),
-            },
-          ]);
-        }
-
         return;
       }
 
-      // ======================================================
-      // NETWORK / TIMEOUT
-      // ======================================================
       if (
-        err?.code === "ECONNABORTED" ||
-        err?.code === "ERR_NETWORK"
+        !hasAuthentication()
       ) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "alex",
-            type: "error",
-            content:
-              "❌ **Server connection failed.**\n\nBackend running hai ya nahi aur `VITE_API_URL` check karo.",
-            timestamp:
-              new Date().toISOString(),
-          },
-        ]);
-
-        return;
-      }
-
-      // ======================================================
-      // OTHER ERROR
-      // ======================================================
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "alex",
-          type: "error",
-          content:
-            `❌ **Error:** ${
-              serverResponse ||
-              serverMsg ||
-              serverError ||
-              err?.message ||
-              "Unknown error"
-            }`,
-          timestamp:
-            new Date().toISOString(),
-        },
-      ]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ==========================================================
-  // ENTER KEY
-  // ==========================================================
-  const handleKeyDown = (e) => {
-    if (
-      e.key === "Enter" &&
-      !e.shiftKey
-    ) {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
-
-  // ==========================================================
-  // SUGGESTED COMMAND
-  // ==========================================================
-  const handleSuggested = (cmd) => {
-    if (cmd === "__UPLOAD__") {
-      if (!hasAuthentication()) {
         setError(
           "Login required. Pehle login karo."
         );
         return;
       }
 
-      fileInputRef.current?.click();
-      return;
-    }
+      setError(null);
 
-    sendMessage(cmd);
-  };
+      setUploading(true);
+
+      setLoading(true);
+
+      const userMsg = {
+        role: "user",
+        type: "message",
+        content:
+          `📤 Uploaded file: **${file.name}** (${(
+            file.size /
+            1024
+          ).toFixed(
+            1
+          )} KB)`,
+        timestamp:
+          new Date().toISOString(),
+      };
+
+      const typingMsg = {
+        role: "alex",
+        type: "typing",
+        content: "...",
+        timestamp:
+          new Date().toISOString(),
+      };
+
+      setMessages(
+        (prev) => [
+          ...prev,
+          userMsg,
+          typingMsg,
+        ]
+      );
+
+      try {
+        const formData =
+          new FormData();
+
+        formData.append(
+          "file",
+          file
+        );
+
+        const hint =
+          input.trim();
+
+        if (hint) {
+          formData.append(
+            "hint",
+            hint
+          );
+        }
+
+        const response =
+          await axios.post(
+            `${API_BASE}/api/alex/upload/analyze`,
+            formData,
+            {
+              headers:
+                getUploadAuthHeaders(),
+              timeout:
+                120000,
+            }
+          );
+
+        const data =
+          response.data;
+
+        setMessages(
+          (prev) =>
+            prev.filter(
+              (m) =>
+                m.type !==
+                "typing"
+            )
+        );
+
+        if (data?.success) {
+          const parts = [];
+
+          if (
+            data.analysis
+              ?.summary
+          ) {
+            parts.push(
+              data.analysis
+                .summary
+            );
+          }
+
+          if (
+            data.fixed
+              ?.syntaxValid
+          ) {
+            parts.push(
+              "\n✅ **Fixed code passed syntax validation.** Copy/download karke use karo."
+            );
+          }
+
+          if (
+            data.explanation
+          ) {
+            parts.push(
+              `\n${data.explanation}`
+            );
+          }
+
+          setMessages(
+            (prev) => [
+              ...prev,
+              {
+                role: "alex",
+                type:
+                  "upload-result",
+                content:
+                  parts.join(
+                    "\n"
+                  ) ||
+                  "File processed successfully.",
+                uploadResult:
+                  data,
+                timestamp:
+                  new Date().toISOString(),
+              },
+            ]
+          );
+        } else {
+          setMessages(
+            (prev) => [
+              ...prev,
+              {
+                role: "alex",
+                type:
+                  "error",
+                content:
+                  `❌ **Upload failed:** ${
+                    data?.error ||
+                    data?.message ||
+                    "Unknown error"
+                  }`,
+                timestamp:
+                  new Date().toISOString(),
+              },
+            ]
+          );
+        }
+
+        setInput("");
+      } catch (err) {
+        setMessages(
+          (prev) =>
+            prev.filter(
+              (m) =>
+                m.type !==
+                "typing"
+            )
+        );
+
+        const status =
+          err?.response
+            ?.status;
+
+        const serverMessage =
+          err?.response
+            ?.data
+            ?.message ||
+          err?.response
+            ?.data
+            ?.error ||
+          err?.message ||
+          "Unknown upload error";
+
+        if (
+          status === 401 ||
+          status === 403
+        ) {
+          setMessages(
+            (prev) => [
+              ...prev,
+              {
+                role: "alex",
+                type:
+                  "error",
+                content:
+                  `❌ **Authentication failed (${status})**\n\n${serverMessage}\n\nLogin session check karo.`,
+                timestamp:
+                  new Date().toISOString(),
+              },
+            ]
+          );
+        } else {
+          setMessages(
+            (prev) => [
+              ...prev,
+              {
+                role: "alex",
+                type:
+                  "error",
+                content:
+                  `❌ **Upload error:** ${serverMessage}`,
+                timestamp:
+                  new Date().toISOString(),
+              },
+            ]
+          );
+        }
+      } finally {
+        setUploading(
+          false
+        );
+
+        setLoading(false);
+      }
+    };
+
+  // ==========================================================
+  // SEND MESSAGE
+  // ==========================================================
+
+  const sendMessage =
+    async (text) => {
+      const message =
+        typeof text ===
+        "string"
+          ? text.trim()
+          : input.trim();
+
+      if (
+        !message ||
+        loading
+      ) {
+        return;
+      }
+
+      if (
+        !hasAuthentication()
+      ) {
+        setError(
+          "Login required. Pehle login karo."
+        );
+        return;
+      }
+
+      const currentWindowsAgentToken =
+        localStorage.getItem(
+          WINDOWS_AGENT_TOKEN_STORAGE_KEY
+        ) ||
+        windowsAgentToken ||
+        "";
+
+      setInput("");
+
+      setLoading(true);
+
+      setError(null);
+
+      const userMsg = {
+        role: "user",
+        type: "message",
+        content:
+          message,
+        timestamp:
+          new Date().toISOString(),
+      };
+
+      const typingMsg = {
+        role: "alex",
+        type: "typing",
+        content: "...",
+        timestamp:
+          new Date().toISOString(),
+      };
+
+      setMessages(
+        (prev) => [
+          ...prev,
+          userMsg,
+          typingMsg,
+        ]
+      );
+
+      try {
+        const response =
+          await axios.post(
+            `${API_BASE}/api/alex/chat`,
+            {
+              message,
+              sessionId,
+              windowsAgentToken:
+                currentWindowsAgentToken,
+            },
+            {
+              headers:
+                getAuthHeaders(),
+              timeout:
+                120000,
+            }
+          );
+
+        const data =
+          response.data;
+
+        setMessages(
+          (prev) =>
+            prev.filter(
+              (m) =>
+                m.type !==
+                "typing"
+            )
+        );
+
+        if (
+          data?.sessionId
+        ) {
+          setSessionId(
+            data.sessionId
+          );
+
+          localStorage.setItem(
+            getSessionStorageKey(),
+            data.sessionId
+          );
+
+          localStorage.setItem(
+            getOwnerMemoryStorageKey(),
+            data.sessionId
+          );
+        }
+
+        if (
+          data?.metrics
+        ) {
+          setMetrics(
+            data.metrics
+          );
+        }
+
+        if (
+          data?.success
+        ) {
+          setMessages(
+            (prev) => [
+              ...prev,
+              {
+                role: "alex",
+                type:
+                  "result",
+                content:
+                  data.response ||
+                  data.message ||
+                  "ALEX completed the request.",
+                result:
+                  data.result,
+                timestamp:
+                  new Date().toISOString(),
+              },
+            ]
+          );
+        } else {
+          setMessages(
+            (prev) => [
+              ...prev,
+              {
+                role: "alex",
+                type:
+                  "error",
+                content:
+                  data?.response ||
+                  data?.message ||
+                  data?.error ||
+                  "ALEX request failed.",
+                result:
+                  data.result,
+                timestamp:
+                  new Date().toISOString(),
+              },
+            ]
+          );
+        }
+      } catch (err) {
+        setMessages(
+          (prev) =>
+            prev.filter(
+              (m) =>
+                m.type !==
+                "typing"
+            )
+        );
+
+        const status =
+          err?.response
+            ?.status;
+
+        const serverMsg =
+          err?.response
+            ?.data
+            ?.message ||
+          "";
+
+        const serverError =
+          err?.response
+            ?.data
+            ?.error ||
+          "";
+
+        const serverResponse =
+          err?.response
+            ?.data
+            ?.response ||
+          "";
+
+        // ======================================================
+        // AUTH FAILURE
+        // ======================================================
+
+        if (
+          status === 401 ||
+          status === 403
+        ) {
+          const token =
+            getToken();
+
+          // ----------------------------------------------------
+          // JWT FAILED
+          // ----------------------------------------------------
+
+          if (token) {
+            try {
+              localStorage.removeItem(
+                "token"
+              );
+            } catch {}
+
+            setMessages(
+              (prev) => [
+                ...prev,
+                {
+                  role: "alex",
+                  type:
+                    "error",
+                  content:
+                    `❌ **Authentication failed (${status})**\n\n${
+                      serverMsg ||
+                      serverError ||
+                      "Login session invalid ya expired hai."
+                    }\n\nPlease logout karke dobara login karo.`,
+                  timestamp:
+                    new Date().toISOString(),
+                },
+              ]
+            );
+          }
+
+          // ----------------------------------------------------
+          // ADMIN KEY FAILED
+          // ----------------------------------------------------
+
+          else if (
+            adminKey
+          ) {
+            setMessages(
+              (prev) => [
+                ...prev,
+                {
+                  role: "alex",
+                  type:
+                    "error",
+                  content:
+                    `❌ **Access denied (${status})**\n\nSaved admin key server ne reject kar di.\n\nAdmin key clear karke dobara valid key set karo.`,
+                  timestamp:
+                    new Date().toISOString(),
+                },
+              ]
+            );
+          }
+
+          // ----------------------------------------------------
+          // NO AUTH
+          // ----------------------------------------------------
+
+          else {
+            setShowAdminKeyInput(
+              true
+            );
+
+            setMessages(
+              (prev) => [
+                ...prev,
+                {
+                  role: "alex",
+                  type:
+                    "error",
+                  content:
+                    "🔑 **Authentication required.** Please login first.",
+                  timestamp:
+                    new Date().toISOString(),
+                },
+              ]
+            );
+          }
+        } else {
+          setMessages(
+            (prev) => [
+              ...prev,
+              {
+                role: "alex",
+                type:
+                  "error",
+                content:
+                  `❌ **Error:** ${
+                    serverResponse ||
+                    serverMsg ||
+                    serverError ||
+                    err?.message ||
+                    "Unknown error"
+                  }`,
+                timestamp:
+                  new Date().toISOString(),
+              },
+            ]
+          );
+        }
+      } finally {
+        setLoading(
+          false
+        );
+      }
+    };
+
+  // ==========================================================
+  // ENTER
+  // ==========================================================
+
+  const handleKeyDown =
+    (e) => {
+      if (
+        e.key ===
+          "Enter" &&
+        !e.shiftKey
+      ) {
+        e.preventDefault();
+
+        sendMessage();
+      }
+    };
+
+  // ==========================================================
+  // SUGGESTED COMMAND
+  // ==========================================================
+
+  const handleSuggested =
+    (cmd) => {
+      if (
+        cmd ===
+        "__UPLOAD__"
+      ) {
+        if (
+          !hasAuthentication()
+        ) {
+          setError(
+            "Login required."
+          );
+          return;
+        }
+
+        fileInputRef.current?.click();
+
+        return;
+      }
+
+      sendMessage(cmd);
+    };
 
   // ==========================================================
   // RESET SESSION
   // ==========================================================
-  const resetSession = async () => {
-    if (sessionId) {
-      try {
-        await axios.delete(
-          `${API_BASE}/api/alex/chat/sessions/${sessionId}`,
-          {
-            headers:
-              getAuthHeaders(),
-            timeout: 30000,
-          }
-        );
-      } catch {}
-    }
 
-    const newSession =
-      createSessionId();
+  const resetSession =
+    async () => {
+      if (sessionId) {
+        try {
+          await axios.delete(
+            `${API_BASE}/api/alex/chat/sessions/${sessionId}`,
+            {
+              headers:
+                getAuthHeaders(),
+            }
+          );
+        } catch {}
+      }
 
-    localStorage.setItem(
-      SESSION_KEY,
-      newSession
-    );
+      localStorage.removeItem(
+        getSessionStorageKey()
+      );
 
-    localStorage.setItem(
-      OWNER_MEMORY_SESSION_KEY,
-      newSession
-    );
+      localStorage.removeItem(
+        getOwnerMemoryStorageKey()
+      );
 
-    setSessionId(newSession);
-    setMessages([]);
-    setMetrics(null);
-    setError(null);
-    setInput("");
-  };
+      setSessionId(
+        createSessionId()
+      );
 
-  // ==========================================================
-  // CLOSED
-  // ==========================================================
-  if (!isOpen) return null;
+      setMessages([]);
 
-  const authenticated =
-    hasAuthentication();
+      setMetrics(null);
 
-  const tokenExists = Boolean(
-    getToken()
-  );
+      setError(null);
+    };
+
+  if (!isOpen) {
+    return null;
+  }
 
   // ==========================================================
   // UI
   // ==========================================================
+
   return (
     <div
       style={{
-        position: "fixed",
+        position:
+          "fixed",
         bottom: "24px",
         right: "24px",
         width: "440px",
         height: "620px",
-        maxWidth: "calc(100vw - 20px)",
-        maxHeight: "calc(100vh - 40px)",
         background:
           "linear-gradient(180deg, #0f0f23 0%, #1a1a2e 100%)",
-        borderRadius: "16px",
+        borderRadius:
+          "16px",
         boxShadow:
           "0 20px 60px rgba(0,0,0,0.5), 0 0 80px rgba(139,92,246,0.15)",
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-        zIndex: 9999,
+        display:
+          "flex",
+        flexDirection:
+          "column",
+        overflow:
+          "hidden",
+        zIndex:
+          9999,
         border:
           "1px solid rgba(139,92,246,0.2)",
         fontFamily:
@@ -1839,23 +2665,30 @@ const AlexChat = ({ isOpen, onClose }) => {
       {/* =====================================================
           HEADER
           ===================================================== */}
+
       <div
         style={{
-          padding: "16px 20px",
+          padding:
+            "16px 20px",
           background:
             "linear-gradient(135deg, #1e1b4b, #312e81)",
           borderBottom:
             "1px solid rgba(139,92,246,0.2)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
+          display:
+            "flex",
+          alignItems:
+            "center",
+          justifyContent:
+            "space-between",
           flexShrink: 0,
         }}
       >
         <div
           style={{
-            display: "flex",
-            alignItems: "center",
+            display:
+              "flex",
+            alignItems:
+              "center",
             gap: "12px",
           }}
         >
@@ -1863,13 +2696,18 @@ const AlexChat = ({ isOpen, onClose }) => {
             style={{
               width: "40px",
               height: "40px",
-              borderRadius: "12px",
+              borderRadius:
+                "12px",
               background:
                 "linear-gradient(135deg, #8b5cf6, #6d28d9)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "20px",
+              display:
+                "flex",
+              alignItems:
+                "center",
+              justifyContent:
+                "center",
+              fontSize:
+                "20px",
             }}
           >
             🤖
@@ -1878,9 +2716,12 @@ const AlexChat = ({ isOpen, onClose }) => {
           <div>
             <div
               style={{
-                color: "#fff",
-                fontWeight: 700,
-                fontSize: "16px",
+                color:
+                  "#fff",
+                fontWeight:
+                  700,
+                fontSize:
+                  "16px",
               }}
             >
               ALEX
@@ -1888,29 +2729,38 @@ const AlexChat = ({ isOpen, onClose }) => {
 
             <div
               style={{
-                color: "#a78bfa",
-                fontSize: "11px",
-                display: "flex",
-                alignItems: "center",
+                color:
+                  "#a78bfa",
+                fontSize:
+                  "11px",
+                display:
+                  "flex",
+                alignItems:
+                  "center",
                 gap: "6px",
               }}
             >
               <span
                 style={{
                   width: "6px",
-                  height: "6px",
-                  borderRadius: "50%",
-                  background: authenticated
-                    ? "#10b981"
-                    : "#ef4444",
-                  display: "inline-block",
+                  height:
+                    "6px",
+                  borderRadius:
+                    "50%",
+                  background:
+                    getToken() ||
+                    adminKey
+                      ? "#10b981"
+                      : "#ef4444",
+                  display:
+                    "inline-block",
                 }}
               />
 
-              {tokenExists
-                ? "● Online"
-                : adminKey
+              {adminKey
                 ? "🔑 Owner Mode"
+                : getToken()
+                ? "● Online"
                 : "⛔ Login Required"}
             </div>
           </div>
@@ -1918,9 +2768,11 @@ const AlexChat = ({ isOpen, onClose }) => {
 
         <div
           style={{
-            display: "flex",
+            display:
+              "flex",
             gap: "8px",
-            alignItems: "center",
+            alignItems:
+              "center",
           }}
         >
           {adminKey && (
@@ -1932,16 +2784,52 @@ const AlexChat = ({ isOpen, onClose }) => {
               style={{
                 background:
                   "rgba(239,68,68,0.15)",
-                border: "none",
-                color: "#fca5a5",
-                width: "32px",
-                height: "32px",
-                borderRadius: "8px",
-                cursor: "pointer",
-                fontSize: "12px",
+                border:
+                  "none",
+                color:
+                  "#fca5a5",
+                width:
+                  "32px",
+                height:
+                  "32px",
+                borderRadius:
+                  "8px",
+                cursor:
+                  "pointer",
+                fontSize:
+                  "12px",
               }}
             >
               🔑
+            </button>
+          )}
+
+          {windowsAgentToken && (
+            <button
+              onClick={
+                handleClearWindowsAgentToken
+              }
+              title="Clear Windows Agent pairing"
+              style={{
+                background:
+                  "rgba(239,68,68,0.15)",
+                border:
+                  "none",
+                color:
+                  "#fca5a5",
+                width:
+                  "32px",
+                height:
+                  "32px",
+                borderRadius:
+                  "8px",
+                cursor:
+                  "pointer",
+                fontSize:
+                  "12px",
+              }}
+            >
+              🖥️
             </button>
           )}
 
@@ -1950,7 +2838,10 @@ const AlexChat = ({ isOpen, onClose }) => {
               setShowWindowsAgentTokenInput(
                 true
               );
-              setShowAdminKeyInput(false);
+
+              setShowAdminKeyInput(
+                false
+              );
             }}
             title="Windows Agent Settings"
             style={{
@@ -1958,15 +2849,22 @@ const AlexChat = ({ isOpen, onClose }) => {
                 windowsAgentToken
                   ? "rgba(16,185,129,0.15)"
                   : "rgba(255,255,255,0.1)",
-              border: "none",
-              color: windowsAgentToken
-                ? "#6ee7b7"
-                : "#cbd5e1",
-              width: "32px",
-              height: "32px",
-              borderRadius: "8px",
-              cursor: "pointer",
-              fontSize: "14px",
+              border:
+                "none",
+              color:
+                windowsAgentToken
+                  ? "#6ee7b7"
+                  : "#cbd5e1",
+              width:
+                "32px",
+              height:
+                "32px",
+              borderRadius:
+                "8px",
+              cursor:
+                "pointer",
+              fontSize:
+                "14px",
             }}
           >
             🖥️
@@ -1975,37 +2873,54 @@ const AlexChat = ({ isOpen, onClose }) => {
           {metrics && (
             <div
               style={{
-                color: "#64748b",
-                fontSize: "11px",
-                textAlign: "right",
+                color:
+                  "#64748b",
+                fontSize:
+                  "11px",
+                textAlign:
+                  "right",
               }}
             >
               <div>
-                {metrics.commandsExecuted ??
-                  0}{" "}
+                {
+                  metrics.commandsExecuted ||
+                  0
+                }{" "}
                 ✅
               </div>
+
               <div>
-                {metrics.commandsFailed ??
-                  0}{" "}
+                {
+                  metrics.commandsFailed ||
+                  0
+                }{" "}
                 ❌
               </div>
             </div>
           )}
 
           <button
-            onClick={resetSession}
+            onClick={
+              resetSession
+            }
             title="New Session"
             style={{
               background:
                 "rgba(255,255,255,0.1)",
-              border: "none",
-              color: "#cbd5e1",
-              width: "32px",
-              height: "32px",
-              borderRadius: "8px",
-              cursor: "pointer",
-              fontSize: "14px",
+              border:
+                "none",
+              color:
+                "#cbd5e1",
+              width:
+                "32px",
+              height:
+                "32px",
+              borderRadius:
+                "8px",
+              cursor:
+                "pointer",
+              fontSize:
+                "14px",
             }}
           >
             ↺
@@ -2017,13 +2932,20 @@ const AlexChat = ({ isOpen, onClose }) => {
             style={{
               background:
                 "rgba(255,255,255,0.1)",
-              border: "none",
-              color: "#cbd5e1",
-              width: "32px",
-              height: "32px",
-              borderRadius: "8px",
-              cursor: "pointer",
-              fontSize: "18px",
+              border:
+                "none",
+              color:
+                "#cbd5e1",
+              width:
+                "32px",
+              height:
+                "32px",
+              borderRadius:
+                "8px",
+              cursor:
+                "pointer",
+              fontSize:
+                "18px",
             }}
           >
             ✕
@@ -2034,30 +2956,41 @@ const AlexChat = ({ isOpen, onClose }) => {
       {/* =====================================================
           MESSAGES
           ===================================================== */}
+
       <div
         style={{
           flex: 1,
-          overflowY: "auto",
-          padding: "20px",
-          scrollBehavior: "smooth",
+          overflowY:
+            "auto",
+          padding:
+            "20px",
+          scrollBehavior:
+            "smooth",
         }}
       >
-        {/* WINDOWS AGENT */}
         {showWindowsAgentTokenInput && (
           <div
             style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              height: "100%",
-              padding: "20px",
+              display:
+                "flex",
+              flexDirection:
+                "column",
+              alignItems:
+                "center",
+              justifyContent:
+                "center",
+              height:
+                "100%",
+              padding:
+                "20px",
             }}
           >
             <div
               style={{
-                fontSize: "48px",
-                marginBottom: "16px",
+                fontSize:
+                  "48px",
+                marginBottom:
+                  "16px",
               }}
             >
               🖥️
@@ -2065,10 +2998,14 @@ const AlexChat = ({ isOpen, onClose }) => {
 
             <div
               style={{
-                fontSize: "18px",
-                fontWeight: 600,
-                color: "#e2e8f0",
-                marginBottom: "8px",
+                fontSize:
+                  "18px",
+                fontWeight:
+                  600,
+                color:
+                  "#e2e8f0",
+                marginBottom:
+                  "8px",
               }}
             >
               Windows Agent Pairing
@@ -2076,24 +3013,33 @@ const AlexChat = ({ isOpen, onClose }) => {
 
             <div
               style={{
-                fontSize: "13px",
-                color: "#94a3b8",
-                maxWidth: "320px",
-                textAlign: "center",
-                marginBottom: "20px",
+                fontSize:
+                  "13px",
+                color:
+                  "#94a3b8",
+                maxWidth:
+                  "320px",
+                textAlign:
+                  "center",
+                marginBottom:
+                  "20px",
               }}
             >
-              Paste the pairing token shown
-              when your local Windows Agent
-              starts.
+              Paste the pairing
+              token shown when
+              your local Windows
+              Agent starts.
             </div>
 
             <div
               style={{
-                display: "flex",
+                display:
+                  "flex",
                 gap: "8px",
-                width: "100%",
-                maxWidth: "350px",
+                width:
+                  "100%",
+                maxWidth:
+                  "350px",
               }}
             >
               <input
@@ -2107,7 +3053,10 @@ const AlexChat = ({ isOpen, onClose }) => {
                   )
                 }
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") {
+                  if (
+                    e.key ===
+                    "Enter"
+                  ) {
                     handleSaveWindowsAgentToken();
                   }
                 }}
@@ -2118,12 +3067,18 @@ const AlexChat = ({ isOpen, onClose }) => {
                     "rgba(255,255,255,0.05)",
                   border:
                     "1px solid rgba(16,185,129,0.3)",
-                  borderRadius: "10px",
-                  padding: "10px 14px",
-                  color: "#e2e8f0",
-                  fontSize: "14px",
-                  outline: "none",
-                  fontFamily: "monospace",
+                  borderRadius:
+                    "10px",
+                  padding:
+                    "10px 14px",
+                  color:
+                    "#e2e8f0",
+                  fontSize:
+                    "14px",
+                  outline:
+                    "none",
+                  fontFamily:
+                    "monospace",
                 }}
               />
 
@@ -2134,78 +3089,52 @@ const AlexChat = ({ isOpen, onClose }) => {
                 style={{
                   background:
                     "linear-gradient(135deg, #10b981, #047857)",
-                  border: "none",
-                  borderRadius: "10px",
-                  padding: "10px 20px",
-                  color: "#fff",
-                  cursor: "pointer",
-                  fontSize: "14px",
-                  fontWeight: 600,
+                  border:
+                    "none",
+                  borderRadius:
+                    "10px",
+                  padding:
+                    "10px 20px",
+                  color:
+                    "#fff",
+                  cursor:
+                    "pointer",
+                  fontSize:
+                    "14px",
+                  fontWeight:
+                    600,
                 }}
               >
                 Pair
               </button>
             </div>
-
-            {windowsAgentToken && (
-              <button
-                onClick={
-                  handleClearWindowsAgentToken
-                }
-                style={{
-                  marginTop: "12px",
-                  background:
-                    "rgba(239,68,68,0.12)",
-                  border:
-                    "1px solid rgba(239,68,68,0.25)",
-                  color: "#fca5a5",
-                  borderRadius: "8px",
-                  padding: "8px 14px",
-                  cursor: "pointer",
-                }}
-              >
-                Clear Pairing
-              </button>
-            )}
-
-            <button
-              onClick={() =>
-                setShowWindowsAgentTokenInput(
-                  false
-                )
-              }
-              style={{
-                marginTop: "12px",
-                background: "transparent",
-                border: "none",
-                color: "#64748b",
-                cursor: "pointer",
-              }}
-            >
-              ← Back to ALEX
-            </button>
           </div>
         )}
 
-        {/* ADMIN KEY */}
-        {!showWindowsAgentTokenInput &&
-          showAdminKeyInput &&
-          !tokenExists &&
-          !adminKey && (
+        {showAdminKeyInput &&
+          !showWindowsAgentTokenInput && (
             <div
               style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                height: "100%",
-                padding: "20px",
+                display:
+                  "flex",
+                flexDirection:
+                  "column",
+                alignItems:
+                  "center",
+                justifyContent:
+                  "center",
+                height:
+                  "100%",
+                padding:
+                  "20px",
               }}
             >
               <div
                 style={{
-                  fontSize: "48px",
-                  marginBottom: "16px",
+                  fontSize:
+                    "48px",
+                  marginBottom:
+                    "16px",
                 }}
               >
                 🔑
@@ -2213,48 +3142,68 @@ const AlexChat = ({ isOpen, onClose }) => {
 
               <div
                 style={{
-                  fontSize: "18px",
-                  fontWeight: 600,
-                  color: "#e2e8f0",
-                  marginBottom: "8px",
+                  fontSize:
+                    "18px",
+                  fontWeight:
+                    600,
+                  color:
+                    "#e2e8f0",
+                  marginBottom:
+                    "8px",
                 }}
               >
-                Admin Key Required
+                Admin Key
               </div>
 
               <div
                 style={{
-                  fontSize: "13px",
-                  color: "#94a3b8",
-                  maxWidth: "320px",
-                  textAlign: "center",
-                  marginBottom: "20px",
+                  fontSize:
+                    "13px",
+                  color:
+                    "#94a3b8",
+                  maxWidth:
+                    "320px",
+                  textAlign:
+                    "center",
+                  marginBottom:
+                    "20px",
                 }}
               >
-                Admin-key fallback use karne
-                ke liye backend ka configured
-                ADMIN_KEY enter karo.
+                Enter the admin key
+                only if you are
+                authorized to use
+                owner/admin mode.
               </div>
 
               <div
                 style={{
-                  display: "flex",
+                  display:
+                    "flex",
                   gap: "8px",
-                  width: "100%",
-                  maxWidth: "350px",
+                  width:
+                    "100%",
+                  maxWidth:
+                    "350px",
                 }}
               >
                 <input
-                  ref={adminKeyInputRef}
+                  ref={
+                    adminKeyInputRef
+                  }
                   type="password"
-                  value={adminKeyInput}
+                  value={
+                    adminKeyInput
+                  }
                   onChange={(e) =>
                     setAdminKeyInput(
                       e.target.value
                     )
                   }
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") {
+                    if (
+                      e.key ===
+                      "Enter"
+                    ) {
                       handleSaveAdminKey();
                     }
                   }}
@@ -2265,12 +3214,18 @@ const AlexChat = ({ isOpen, onClose }) => {
                       "rgba(255,255,255,0.05)",
                     border:
                       "1px solid rgba(139,92,246,0.3)",
-                    borderRadius: "10px",
-                    padding: "10px 14px",
-                    color: "#e2e8f0",
-                    fontSize: "14px",
-                    outline: "none",
-                    fontFamily: "monospace",
+                    borderRadius:
+                      "10px",
+                    padding:
+                      "10px 14px",
+                    color:
+                      "#e2e8f0",
+                    fontSize:
+                      "14px",
+                    outline:
+                      "none",
+                    fontFamily:
+                      "monospace",
                   }}
                 />
 
@@ -2281,56 +3236,57 @@ const AlexChat = ({ isOpen, onClose }) => {
                   style={{
                     background:
                       "linear-gradient(135deg, #8b5cf6, #6d28d9)",
-                    border: "none",
-                    borderRadius: "10px",
-                    padding: "10px 20px",
-                    color: "#fff",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: 600,
+                    border:
+                      "none",
+                    borderRadius:
+                      "10px",
+                    padding:
+                      "10px 20px",
+                    color:
+                      "#fff",
+                    cursor:
+                      "pointer",
+                    fontSize:
+                      "14px",
+                    fontWeight:
+                      600,
                   }}
                 >
                   Set Key
                 </button>
               </div>
-
-              <button
-                onClick={() =>
-                  setShowAdminKeyInput(false)
-                }
-                style={{
-                  marginTop: "12px",
-                  background: "transparent",
-                  border: "none",
-                  color: "#64748b",
-                  cursor: "pointer",
-                }}
-              >
-                ← Back
-              </button>
             </div>
           )}
 
-        {/* EMPTY */}
-        {!showWindowsAgentTokenInput &&
-          !showAdminKeyInput &&
+        {!showAdminKeyInput &&
+          !showWindowsAgentTokenInput &&
           messages.length === 0 && (
             <div
               style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                height: "100%",
-                color: "#64748b",
-                textAlign: "center",
-                padding: "20px",
+                display:
+                  "flex",
+                flexDirection:
+                  "column",
+                alignItems:
+                  "center",
+                justifyContent:
+                  "center",
+                minHeight:
+                  "100%",
+                color:
+                  "#64748b",
+                textAlign:
+                  "center",
+                padding:
+                  "20px",
               }}
             >
               <div
                 style={{
-                  fontSize: "48px",
-                  marginBottom: "16px",
+                  fontSize:
+                    "48px",
+                  marginBottom:
+                    "16px",
                 }}
               >
                 🤖
@@ -2338,10 +3294,14 @@ const AlexChat = ({ isOpen, onClose }) => {
 
               <div
                 style={{
-                  fontSize: "18px",
-                  fontWeight: 600,
-                  color: "#94a3b8",
-                  marginBottom: "8px",
+                  fontSize:
+                    "18px",
+                  fontWeight:
+                    600,
+                  color:
+                    "#94a3b8",
+                  marginBottom:
+                    "8px",
                 }}
               >
                 ALEX is ready
@@ -2349,28 +3309,38 @@ const AlexChat = ({ isOpen, onClose }) => {
 
               <div
                 style={{
-                  fontSize: "13px",
-                  color: "#64748b",
-                  maxWidth: "300px",
-                  marginBottom: "24px",
+                  fontSize:
+                    "13px",
+                  color:
+                    "#64748b",
+                  maxWidth:
+                    "300px",
+                  marginBottom:
+                    "24px",
                 }}
               >
-                File upload karke fix karwa
-                ya directly ALEX ko kuch bhi
-                bolo.
+                File upload karke
+                fix karwa ya kuch
+                bhi bolo!
               </div>
 
-              {authenticated && (
+              {hasAuthentication() && (
                 <div
                   style={{
-                    display: "flex",
-                    flexDirection: "column",
+                    display:
+                      "flex",
+                    flexDirection:
+                      "column",
                     gap: "6px",
-                    width: "100%",
+                    width:
+                      "100%",
                   }}
                 >
                   {SUGGESTED_COMMANDS.map(
-                    (cmd, i) => (
+                    (
+                      cmd,
+                      i
+                    ) => (
                       <button
                         key={i}
                         onClick={() =>
@@ -2389,7 +3359,8 @@ const AlexChat = ({ isOpen, onClose }) => {
                             "__UPLOAD__"
                               ? "1px solid rgba(16,185,129,0.3)"
                               : "1px solid rgba(139,92,246,0.2)",
-                          borderRadius: "8px",
+                          borderRadius:
+                            "8px",
                           padding:
                             "8px 14px",
                           color:
@@ -2397,12 +3368,17 @@ const AlexChat = ({ isOpen, onClose }) => {
                             "__UPLOAD__"
                               ? "#6ee7b7"
                               : "#c4b5fd",
-                          cursor: "pointer",
-                          fontSize: "13px",
-                          textAlign: "left",
+                          cursor:
+                            "pointer",
+                          fontSize:
+                            "13px",
+                          textAlign:
+                            "left",
                         }}
                       >
-                        {cmd.label}
+                        {
+                          cmd.label
+                        }
                       </button>
                     )
                   )}
@@ -2411,110 +3387,151 @@ const AlexChat = ({ isOpen, onClose }) => {
             </div>
           )}
 
-        {/* ERROR BAR */}
-        {error && !showAdminKeyInput && (
-          <div
-            style={{
-              marginBottom: "12px",
-              padding: "10px 12px",
-              borderRadius: "8px",
-              background:
-                "rgba(239,68,68,0.1)",
-              border:
-                "1px solid rgba(239,68,68,0.25)",
-              color: "#fca5a5",
-              fontSize: "12px",
-            }}
-          >
-            {error}
-
-            <button
-              onClick={() => setError(null)}
+        {error &&
+          !showAdminKeyInput &&
+          !showWindowsAgentTokenInput && (
+            <div
               style={{
-                float: "right",
-                background: "none",
-                border: "none",
-                color: "#fca5a5",
-                cursor: "pointer",
+                marginBottom:
+                  "12px",
+                padding:
+                  "10px 12px",
+                borderRadius:
+                  "8px",
+                background:
+                  "rgba(239,68,68,0.1)",
+                border:
+                  "1px solid rgba(239,68,68,0.25)",
+                color:
+                  "#fca5a5",
+                fontSize:
+                  "12px",
               }}
             >
-              ✕
-            </button>
-          </div>
-        )}
+              {error}
 
-        {/* CHAT */}
-        {!showWindowsAgentTokenInput &&
-          !showAdminKeyInput &&
-          messages.map((msg, i) =>
-            msg.type === "typing" ? (
-              <div
-                key={i}
+              <button
+                onClick={() =>
+                  setError(
+                    null
+                  )
+                }
                 style={{
-                  display: "flex",
-                  gap: "12px",
-                  marginBottom: "20px",
-                  alignItems: "center",
-                  padding:
-                    "14px 18px",
-                  background: "#16213e",
-                  borderRadius:
-                    "16px 16px 16px 4px",
-                  maxWidth: "80%",
+                  float:
+                    "right",
+                  background:
+                    "none",
+                  border:
+                    "none",
+                  color:
+                    "#fca5a5",
+                  cursor:
+                    "pointer",
                 }}
               >
-                <div
-                  style={{
-                    color: "#a78bfa",
-                    fontSize: "14px",
-                  }}
-                >
-                  🤖
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "4px",
-                  }}
-                >
-                  {[0, 1, 2].map((j) => (
-                    <span
-                      key={j}
-                      style={{
-                        width: "8px",
-                        height: "8px",
-                        borderRadius:
-                          "50%",
-                        background:
-                          "#8b5cf6",
-                        animation:
-                          "bounce 1.4s infinite ease-in-out",
-                        animationDelay: `${
-                          j * 0.2
-                        }s`,
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <ChatMessage
-                key={i}
-                message={msg}
-              />
-            )
+                ✕
+              </button>
+            </div>
           )}
 
-        <div ref={messagesEndRef} />
+        {!showWindowsAgentTokenInput &&
+          !showAdminKeyInput &&
+          messages.map(
+            (msg, i) =>
+              msg.type ===
+              "typing" ? (
+                <div
+                  key={i}
+                  style={{
+                    display:
+                      "flex",
+                    gap:
+                      "12px",
+                    marginBottom:
+                      "20px",
+                    alignItems:
+                      "center",
+                    padding:
+                      "14px 18px",
+                    background:
+                      "#16213e",
+                    borderRadius:
+                      "16px 16px 16px 4px",
+                    maxWidth:
+                      "80%",
+                  }}
+                >
+                  <div
+                    style={{
+                      color:
+                        "#a78bfa",
+                      fontSize:
+                        "14px",
+                    }}
+                  >
+                    🤖
+                  </div>
+
+                  <div
+                    style={{
+                      display:
+                        "flex",
+                      gap:
+                        "4px",
+                    }}
+                  >
+                    {[0, 1, 2].map(
+                      (j) => (
+                        <span
+                          key={
+                            j
+                          }
+                          style={{
+                            width:
+                              "8px",
+                            height:
+                              "8px",
+                            borderRadius:
+                              "50%",
+                            background:
+                              "#8b5cf6",
+                            animation:
+                              "bounce 1.4s infinite ease-in-out",
+                            animationDelay: `${
+                              j *
+                              0.2
+                            }s`,
+                          }}
+                        />
+                      )
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <ChatMessage
+                  key={i}
+                  message={
+                    msg
+                  }
+                />
+              )
+          )}
+
+        <div
+          ref={
+            messagesEndRef
+          }
+        />
       </div>
 
       {/* =====================================================
           INPUT
           ===================================================== */}
+
       <div
         style={{
-          padding: "12px 16px",
+          padding:
+            "12px 16px",
           borderTop:
             "1px solid rgba(139,92,246,0.15)",
           background:
@@ -2524,23 +3541,31 @@ const AlexChat = ({ isOpen, onClose }) => {
       >
         <div
           style={{
-            display: "flex",
+            display:
+              "flex",
             gap: "8px",
           }}
         >
-          {/* HIDDEN FILE INPUT */}
           <input
-            ref={fileInputRef}
+            ref={
+              fileInputRef
+            }
             type="file"
             accept=".js,.mjs,.cjs,.jsx,.ts,.tsx,.py,.java,.cpp,.c,.html,.css,.json,.sql,.sh,.md,.go,.rb,.php"
-            style={{ display: "none" }}
-            onChange={handleFileSelect}
+            style={{
+              display:
+                "none",
+            }}
+            onChange={
+              handleFileSelect
+            }
           />
 
-          {/* UPLOAD */}
           <button
             onClick={() => {
-              if (!hasAuthentication()) {
+              if (
+                !hasAuthentication()
+              ) {
                 setError(
                   "Login required. Pehle login karo."
                 );
@@ -2555,36 +3580,52 @@ const AlexChat = ({ isOpen, onClose }) => {
             }
             title="Upload file"
             style={{
-              width: "42px",
-              height: "42px",
-              borderRadius: "10px",
+              width:
+                "42px",
+              height:
+                "42px",
+              borderRadius:
+                "10px",
               background:
                 "rgba(16,185,129,0.15)",
               border:
                 "1px solid rgba(16,185,129,0.3)",
-              color: "#34d399",
+              color:
+                "#34d399",
               cursor:
-                uploading || loading
+                uploading ||
+                loading
                   ? "not-allowed"
                   : "pointer",
-              fontSize: "18px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              fontSize:
+                "18px",
+              display:
+                "flex",
+              alignItems:
+                "center",
+              justifyContent:
+                "center",
               flexShrink: 0,
             }}
           >
-            {uploading ? "⏳" : "📎"}
+            {uploading
+              ? "⏳"
+              : "📎"}
           </button>
 
-          {/* TEXT */}
           <textarea
-            ref={inputRef}
+            ref={
+              inputRef
+            }
             value={input}
             onChange={(e) =>
-              setInput(e.target.value)
+              setInput(
+                e.target.value
+              )
             }
-            onKeyDown={handleKeyDown}
+            onKeyDown={
+              handleKeyDown
+            }
             placeholder={
               authenticated
                 ? "Tell ALEX what to do... (ya 📎 se file upload karo)"
@@ -2601,21 +3642,29 @@ const AlexChat = ({ isOpen, onClose }) => {
                 "rgba(255,255,255,0.05)",
               border:
                 "1px solid rgba(139,92,246,0.2)",
-              borderRadius: "10px",
-              padding: "10px 14px",
-              color: "#e2e8f0",
-              fontSize: "14px",
-              resize: "none",
-              outline: "none",
-              minHeight: "42px",
-              fontFamily: "inherit",
-              opacity: authenticated
-                ? 1
-                : 0.6,
+              borderRadius:
+                "10px",
+              padding:
+                "10px 14px",
+              color:
+                "#e2e8f0",
+              fontSize:
+                "14px",
+              resize:
+                "none",
+              outline:
+                "none",
+              minHeight:
+                "42px",
+              fontFamily:
+                "inherit",
+              opacity:
+                authenticated
+                  ? 1
+                  : 0.6,
             }}
           />
 
-          {/* SEND */}
           <button
             onClick={() =>
               sendMessage()
@@ -2626,31 +3675,42 @@ const AlexChat = ({ isOpen, onClose }) => {
               !authenticated
             }
             style={{
-              width: "42px",
-              height: "42px",
-              borderRadius: "10px",
+              width:
+                "42px",
+              height:
+                "42px",
+              borderRadius:
+                "10px",
               background:
                 loading ||
                 !authenticated ||
                 !input.trim()
                   ? "rgba(139,92,246,0.3)"
                   : "linear-gradient(135deg, #8b5cf6, #6d28d9)",
-              border: "none",
-              color: "#fff",
+              border:
+                "none",
+              color:
+                "#fff",
               cursor:
                 loading ||
                 !authenticated ||
                 !input.trim()
                   ? "not-allowed"
                   : "pointer",
-              fontSize: "18px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              fontSize:
+                "18px",
+              display:
+                "flex",
+              alignItems:
+                "center",
+              justifyContent:
+                "center",
               flexShrink: 0,
             }}
           >
-            {loading ? "⏳" : "➤"}
+            {loading
+              ? "⏳"
+              : "➤"}
           </button>
         </div>
       </div>
@@ -2658,6 +3718,7 @@ const AlexChat = ({ isOpen, onClose }) => {
       {/* =====================================================
           STYLE
           ===================================================== */}
+
       <style>{`
         .alex-content p {
           margin: 0 0 8px 0;
