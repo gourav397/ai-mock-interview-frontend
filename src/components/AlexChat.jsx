@@ -628,10 +628,12 @@ const handleClearWindowsAgentToken = () => {
     e.target.value = "";
     if (!file || uploading) return;
 
-    if (!adminKey && !localStorage.getItem("token")) {
-      setShowAdminKeyInput(true);
-      return;
-    }
+    const token = localStorage.getItem("token");
+
+if (!token && !adminKey) {
+  setError("Login required.");
+  return;
+}
 
     setUploading(true);
     setLoading(true);
@@ -652,7 +654,9 @@ const handleClearWindowsAgentToken = () => {
       const { data } = await axios.post(
         `${API_BASE}/api/alex/upload/analyze`,
         formData,
-        { headers: { "x-admin-key": adminKey || undefined } }
+       {
+  headers: getAuthHeaders()
+}
       );
 
       setMessages(prev => prev.filter(m => m.type !== "typing"));
@@ -698,10 +702,12 @@ const handleClearWindowsAgentToken = () => {
   windowsAgentToken ||
   "";
 
-    if (!adminKey && !localStorage.getItem("token")) {
-      setShowAdminKeyInput(true);
-      return;
-    }
+   const token = localStorage.getItem("token");
+
+if (!token && !adminKey) {
+  setError("Login required.");
+  return;
+}
 
     setInput("");
     setLoading(true);
@@ -965,7 +971,7 @@ const handleClearWindowsAgentToken = () => {
               ALEX is ready
             </div>
             <div style={{ fontSize: "13px", color: "#64748b", maxWidth: "300px", marginBottom: "24px" }}>
-              {adminKey ? "File upload karke fix karwa ya kuch bhi bolo!" : "Enter your admin key to start."}
+              "File upload karke fix karwa ya kuch bhi bolo!"
             </div>
             {adminKey && (
               <div style={{ display: "flex", flexDirection: "column", gap: "6px", width: "100%" }}>
@@ -1014,14 +1020,14 @@ const handleClearWindowsAgentToken = () => {
             {uploading ? "⏳" : "📎"}
           </button>
           <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
-            placeholder={adminKey ? "Tell ALEX what to do... (ya 📎 se file upload karo)" : "Click 🔑 to set admin key first..."} rows={1}
-            disabled={loading || !adminKey}
+           placeholder="Tell ALEX what to do... (ya 📎 se file upload karo)"
+disabled={loading}
             style={{ flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: "10px", padding: "10px 14px", color: "#e2e8f0", fontSize: "14px", resize: "none", outline: "none", minHeight: "42px", fontFamily: "inherit", opacity: adminKey ? 1 : 0.5 }}
           />
-          <button onClick={() => !adminKey ? setShowAdminKeyInput(true) : sendMessage()}
+          <button onClick={() => sendMessage()}
             disabled={loading || (!input.trim() && adminKey)}
             style={{ width: "42px", height: "42px", borderRadius: "10px", background: loading ? "rgba(139,92,246,0.3)" : "linear-gradient(135deg, #8b5cf6, #6d28d9)", border: "none", color: "#fff", cursor: loading || (!input.trim() && adminKey) ? "not-allowed" : "pointer", fontSize: "18px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            {!adminKey ? "🔑" : loading ? "⏳" : "➤"}
+            {loading ? "⏳" : "➤"}
           </button>
         </div>
       </div>
