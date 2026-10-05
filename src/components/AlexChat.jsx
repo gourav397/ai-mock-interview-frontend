@@ -530,15 +530,20 @@ const [windowsAgentTokenInput, setWindowsAgentTokenInput] = useState("");
   }, [isOpen, showAdminKeyInput]);
 
   const getAuthHeaders = useCallback(() => {
-    const headers = { "Content-Type": "application/json" };
-    if (adminKey) {
-      headers["x-admin-key"] = adminKey;
-    } else {
-      const token = localStorage.getItem("token");
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-    }
-    return headers;
-  }, [adminKey]);
+  const headers = {
+    "Content-Type": "application/json",
+  };
+
+  const token = localStorage.getItem("token");
+
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  } else if (adminKey) {
+    headers["x-admin-key"] = adminKey;
+  }
+
+  return headers;
+}, [adminKey]);
 
   const handleSaveAdminKey = () => {
     const key = adminKeyInput.trim();
@@ -946,7 +951,9 @@ if (!token && !adminKey) {
     </div>
   </div>
 )}
-        {showAdminKeyInput && (
+        {showAdminKeyInput &&
+  !localStorage.getItem("token") &&
+  !adminKey && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", padding: "20px" }}>
             <div style={{ fontSize: "48px", marginBottom: "16px" }}>🔑</div>
             <div style={{ fontSize: "18px", fontWeight: 600, color: "#e2e8f0", marginBottom: "8px" }}>Admin Key Required</div>
@@ -1012,7 +1019,16 @@ if (!token && !adminKey) {
           />
           {/* upload button */}
           <button
-            onClick={() => !adminKey ? setShowAdminKeyInput(true) : fileInputRef.current?.click()}
+            onClick={() => {
+  const token = localStorage.getItem("token");
+
+  if (!token && !adminKey) {
+    setError("Login required.");
+    return;
+  }
+
+  fileInputRef.current?.click();
+}}
             disabled={uploading}
             title="Upload file — ALEX samjhega, fix karega, wapas dega"
             style={{ width: "42px", height: "42px", borderRadius: "10px", background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", color: "#34d399", cursor: "pointer", fontSize: "18px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
@@ -1020,7 +1036,8 @@ if (!token && !adminKey) {
             {uploading ? "⏳" : "📎"}
           </button>
           <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
-           placeholder="Tell ALEX what to do... (ya 📎 se file upload karo)"
+          placeholder="Tell ALEX what to do... (ya 📎 se file upload karo)"
+rows={1}
 disabled={loading}
             style={{ flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: "10px", padding: "10px 14px", color: "#e2e8f0", fontSize: "14px", resize: "none", outline: "none", minHeight: "42px", fontFamily: "inherit", opacity: adminKey ? 1 : 0.5 }}
           />
