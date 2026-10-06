@@ -6,78 +6,101 @@ import React, {
 } from "react";
 import axios from "axios";
 
-const API_BASE =
+const API_BASE = (
   import.meta.env.VITE_API_URL ||
-  "http://localhost:5000";
+  "http://localhost:5000"
+).replace(/\/+$/, "");
 
-const SESSION_KEY =
-  "alex_chat_session_id";
-
+const SESSION_KEY = "alex_chat_session_id";
 const OWNER_MEMORY_SESSION_KEY =
   "alex_owner_memory_session_id";
 
-const ADMIN_KEY_STORAGE_KEY =
-  "alex_admin_key";
-
+const ADMIN_KEY_STORAGE_KEY = "alex_admin_key";
 const WINDOWS_AGENT_TOKEN_STORAGE_KEY =
   "alex_windows_agent_token";
 
+const ALEX_AVATAR = "🤖";
+const USER_AVATAR = "👤";
+
 // ============================================================
-// IDENTITY-SCOPED SESSION STORAGE
+// IDENTITY
 // ============================================================
+
+const decodeJwtPayload = (token) => {
+  try {
+    const parts = String(token || "").split(".");
+
+    if (parts.length !== 3) {
+      return null;
+    }
+
+    const base64 = parts[1]
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
+
+    const padded =
+      base64 +
+      "=".repeat(
+        (4 - (base64.length % 4)) % 4
+      );
+
+    const json = decodeURIComponent(
+      atob(padded)
+        .split("")
+        .map(
+          (c) =>
+            `%${(
+              "00" +
+              c.charCodeAt(0).toString(16)
+            ).slice(-2)}`
+        )
+        .join("")
+    );
+
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+};
+
+const getCurrentToken = () => {
+  try {
+    return (
+      localStorage.getItem("token") ||
+      sessionStorage.getItem("token") ||
+      ""
+    );
+  } catch {
+    return "";
+  }
+};
 
 const getIdentityStorageKey = () => {
   try {
-    const token =
-      localStorage.getItem("token");
+    const token = getCurrentToken();
+    const payload = decodeJwtPayload(token);
 
-    if (token) {
-      const parts =
-        token.split(".");
+    const id =
+      payload?.id ||
+      payload?._id ||
+      payload?.userId;
 
-      if (parts.length === 3) {
-        const payload =
-          JSON.parse(
-            decodeURIComponent(
-              atob(
-                parts[1]
-                  .replace(/-/g, "+")
-                  .replace(/_/g, "/")
-              )
-                .split("")
-                .map(
-                  (c) =>
-                    `%${(
-                      "00" +
-                      c.charCodeAt(
-                        0
-                      ).toString(16)
-                    ).slice(-2)}`
-                )
-                .join("")
-            )
-          );
-
-        if (
-          payload?.id ||
-          payload?._id ||
-          payload?.userId
-        ) {
-          return String(
-            payload.id ||
-              payload._id ||
-              payload.userId
-          );
-        }
-      }
+    if (id) {
+      return String(id);
     }
-  } catch {}
 
-  return localStorage.getItem(
-    ADMIN_KEY_STORAGE_KEY
-  )
-    ? "admin-key-owner"
-    : "anonymous";
+    const email = payload?.email;
+
+    if (email) {
+      return `email:${String(
+        email
+      ).toLowerCase()}`;
+    }
+
+    return "anonymous";
+  } catch {
+    return "anonymous";
+  }
 };
 
 const getSessionStorageKey = () =>
@@ -86,11 +109,8 @@ const getSessionStorageKey = () =>
 const getOwnerMemoryStorageKey = () =>
   `${OWNER_MEMORY_SESSION_KEY}:${getIdentityStorageKey()}`;
 
-const ALEX_AVATAR = "🤖";
-const USER_AVATAR = "👤";
-
 // ============================================================
-// SAFE SESSION ID
+// SESSION ID
 // ============================================================
 
 const createSessionId = () => {
@@ -209,25 +229,19 @@ const FixedCodeBlock = ({
           code
         );
       } else {
-        const ta =
+        const textarea =
           document.createElement(
             "textarea"
           );
 
-        ta.value = code;
-
+        textarea.value = code;
         document.body.appendChild(
-          ta
+          textarea
         );
-
-        ta.select();
-
-        document.execCommand(
-          "copy"
-        );
-
+        textarea.select();
+        document.execCommand("copy");
         document.body.removeChild(
-          ta
+          textarea
         );
       }
 
@@ -255,25 +269,22 @@ const FixedCodeBlock = ({
       const url =
         URL.createObjectURL(blob);
 
-      const a =
-        document.createElement(
-          "a"
-        );
+      const anchor =
+        document.createElement("a");
 
-      a.href = url;
-
-      a.download =
+      anchor.href = url;
+      anchor.download =
         fileName ||
         "fixed-code.txt";
 
       document.body.appendChild(
-        a
+        anchor
       );
 
-      a.click();
+      anchor.click();
 
       document.body.removeChild(
-        a
+        anchor
       );
 
       setTimeout(
@@ -333,9 +344,7 @@ const FixedCodeBlock = ({
           }}
         >
           <button
-            onClick={
-              handleCopy
-            }
+            onClick={handleCopy}
             style={{
               background:
                 copied
@@ -398,7 +407,7 @@ const FixedCodeBlock = ({
 };
 
 // ============================================================
-// UPLOAD RESULT PANEL
+// UPLOAD RESULT
 // ============================================================
 
 const UploadResultPanel = ({
@@ -493,21 +502,22 @@ const UploadResultPanel = ({
             "HIGH",
             "MEDIUM",
             "LOW",
-          ].map((s) => (
+          ].map((severity) => (
             <span
-              key={s}
+              key={severity}
               style={{
                 color:
-                  sevColor[s],
-                fontSize:
-                  "11px",
+                  sevColor[
+                    severity
+                  ],
+                fontSize: "11px",
                 fontWeight: 600,
               }}
             >
-              {s}:{" "}
+              {severity}:{" "}
               {analysis
                 ?.severityCount?.[
-                s
+                severity
               ] || 0}
             </span>
           ))}
@@ -520,8 +530,7 @@ const UploadResultPanel = ({
           style={{
             padding:
               "10px 14px",
-            maxHeight:
-              "180px",
+            maxHeight: "180px",
             overflowY:
               "auto",
           }}
@@ -529,12 +538,9 @@ const UploadResultPanel = ({
           {analysis.issues
             .slice(0, 10)
             .map(
-              (
-                issue,
-                i
-              ) => (
+              (issue, index) => (
                 <div
-                  key={i}
+                  key={index}
                   style={{
                     marginBottom:
                       "8px",
@@ -558,7 +564,6 @@ const UploadResultPanel = ({
                       "INFO"}
                     ]
                   </span>{" "}
-
                   <span
                     style={{
                       color:
@@ -596,9 +601,7 @@ const UploadResultPanel = ({
                       }}
                     >
                       →{" "}
-                      {
-                        issue.fix
-                      }
+                      {issue.fix}
                     </div>
                   )}
                 </div>
@@ -609,12 +612,11 @@ const UploadResultPanel = ({
 
       {fixed?.code && (
         <FixedCodeBlock
-          code={
-            fixed.code
-          }
-          fileName={
-            `fixed_${fileName || "code"}`
-          }
+          code={fixed.code}
+          fileName={`fixed_${
+            fileName ||
+            "code"
+          }`}
         />
       )}
 
@@ -624,10 +626,8 @@ const UploadResultPanel = ({
           style={{
             padding:
               "8px 14px",
-            color:
-              "#f59e0b",
-            fontSize:
-              "12px",
+            color: "#f59e0b",
+            fontSize: "12px",
           }}
         >
           ⚠️{" "}
@@ -647,19 +647,15 @@ const UploadResultPanel = ({
         <button
           onClick={() =>
             setShowOriginal(
-              (p) => !p
+              (value) => !value
             )
           }
           style={{
-            background:
-              "none",
+            background: "none",
             border: "none",
-            color:
-              "#64748b",
-            fontSize:
-              "11px",
-            cursor:
-              "pointer",
+            color: "#64748b",
+            fontSize: "11px",
+            cursor: "pointer",
           }}
         >
           {showOriginal
@@ -671,18 +667,14 @@ const UploadResultPanel = ({
           original?.code && (
             <pre
               style={{
-                marginTop:
-                  "6px",
-                padding:
-                  "10px",
+                marginTop: "6px",
+                padding: "10px",
                 background:
                   "#0a0a1a",
                 color:
                   "#94a3b8",
-                fontSize:
-                  "11px",
-                maxHeight:
-                  "200px",
+                fontSize: "11px",
+                maxHeight: "200px",
                 overflowY:
                   "auto",
                 borderRadius:
@@ -690,9 +682,7 @@ const UploadResultPanel = ({
               }}
             >
               <code>
-                {
-                  original.code
-                }
+                {original.code}
               </code>
             </pre>
           )}
@@ -730,7 +720,7 @@ const ReportPanel = ({
       <button
         onClick={() =>
           setExpanded(
-            (prev) => !prev
+            (value) => !value
           )
         }
         style={{
@@ -740,15 +730,11 @@ const ReportPanel = ({
           border: "none",
           padding:
             "10px 14px",
-          color:
-            "#c4b5fd",
-          fontSize:
-            "13px",
+          color: "#c4b5fd",
+          fontSize: "13px",
           fontWeight: 600,
-          cursor:
-            "pointer",
-          display:
-            "flex",
+          cursor: "pointer",
+          display: "flex",
           alignItems:
             "center",
           justifyContent:
@@ -789,8 +775,7 @@ const ReportPanel = ({
           color: "#e2e8f0",
           fontSize:
             "12.5px",
-          lineHeight:
-            "1.6",
+          lineHeight: "1.6",
           wordBreak:
             "break-word",
           maxHeight:
@@ -818,11 +803,8 @@ const ResultCard = ({
 
   const getStatusColor =
     () => {
-      if (
-        result.success
-      ) {
+      if (result.success)
         return "#10b981";
-      }
 
       if (
         result.status ===
@@ -871,23 +853,20 @@ const ResultCard = ({
   return (
     <div
       style={{
-        borderLeft: `4px solid ${getStatusColor()}`,
+        borderLeft:
+          `4px solid ${getStatusColor()}`,
         background:
           "#1a1a2e",
-        borderRadius:
-          "8px",
+        borderRadius: "8px",
         padding:
           "12px 16px",
-        marginTop:
-          "8px",
-        fontSize:
-          "13px",
+        marginTop: "8px",
+        fontSize: "13px",
       }}
     >
       <div
         style={{
-          display:
-            "flex",
+          display: "flex",
           alignItems:
             "center",
           gap: "8px",
@@ -903,10 +882,8 @@ const ResultCard = ({
           style={{
             color:
               getStatusColor(),
-            fontWeight:
-              600,
-            fontSize:
-              "13px",
+            fontWeight: 600,
+            fontSize: "13px",
           }}
         >
           {result.status ===
@@ -924,10 +901,8 @@ const ResultCard = ({
         {result.durationMs && (
           <span
             style={{
-              color:
-                "#64748b",
-              fontSize:
-                "12px",
+              color: "#64748b",
+              fontSize: "12px",
               marginLeft:
                 "auto",
             }}
@@ -944,27 +919,21 @@ const ResultCard = ({
       {result.message && (
         <div
           style={{
-            color:
-              "#94a3b8",
-            fontSize:
-              "13px",
+            color: "#94a3b8",
+            fontSize: "13px",
             marginBottom:
               "8px",
           }}
         >
-          {
-            result.message
-          }
+          {result.message}
         </div>
       )}
 
       {result.error && (
         <div
           style={{
-            color:
-              "#ef4444",
-            fontSize:
-              "13px",
+            color: "#ef4444",
+            fontSize: "13px",
             marginBottom:
               "8px",
           }}
@@ -976,8 +945,7 @@ const ResultCard = ({
       {systemInfo && (
         <div
           style={{
-            marginTop:
-              "10px",
+            marginTop: "10px",
             background:
               "rgba(255,255,255,0.04)",
             border:
@@ -990,586 +958,44 @@ const ResultCard = ({
         >
           <div
             style={{
-              color:
-                "#c4b5fd",
-              fontWeight:
-                700,
-              fontSize:
-                "13px",
+              color: "#c4b5fd",
+              fontWeight: 700,
+              fontSize: "13px",
               marginBottom:
                 "10px",
             }}
           >
-            💻 Laptop Information
+            Execution Details
           </div>
 
-          {systemInfo.os && (
-            <div
-              style={{
-                marginBottom:
-                  "10px",
-              }}
-            >
-              <div
-                style={{
-                  color:
-                    "#a78bfa",
-                  fontWeight:
-                    600,
-                }}
-              >
-                🪟 Operating System
-              </div>
-
-              <div
-                style={{
-                  color:
-                    "#cbd5e1",
-                  marginTop:
-                    "4px",
-                }}
-              >
-                Type:{" "}
-                {systemInfo.os.type ||
-                  "Unknown"}
-                <br />
-                Version:{" "}
-                {systemInfo.os.release ||
-                  "Unknown"}
-                <br />
-                Architecture:{" "}
-                {systemInfo.os.arch ||
-                  "Unknown"}
-                <br />
-                Hostname:{" "}
-                {systemInfo.os.hostname ||
-                  "Unknown"}
-                <br />
-                Uptime:{" "}
-                {systemInfo.os.uptimeMinutes ??
-                  "Unknown"}{" "}
-                minutes
-              </div>
-            </div>
-          )}
-
-          {systemInfo.cpu && (
-            <div
-              style={{
-                marginBottom:
-                  "10px",
-              }}
-            >
-              <div
-                style={{
-                  color:
-                    "#a78bfa",
-                  fontWeight:
-                    600,
-                }}
-              >
-                🧠 CPU
-              </div>
-
-              <div
-                style={{
-                  color:
-                    "#cbd5e1",
-                  marginTop:
-                    "4px",
-                }}
-              >
-                Model:{" "}
-                {systemInfo.cpu.model ||
-                  "Unknown"}
-                <br />
-                Cores:{" "}
-                {systemInfo.cpu.cores ??
-                  "Unknown"}
-                <br />
-                Load:{" "}
-                {Array.isArray(
-                  systemInfo.cpu
-                    .loadAvg
-                )
-                  ? systemInfo.cpu.loadAvg.join(
-                      " / "
-                    )
-                  : "Unknown"}
-              </div>
-            </div>
-          )}
-
-          {systemInfo.memory && (
-            <div
-              style={{
-                marginBottom:
-                  "10px",
-              }}
-            >
-              <div
-                style={{
-                  color:
-                    "#a78bfa",
-                  fontWeight:
-                    600,
-                }}
-              >
-                🧮 RAM
-              </div>
-
-              <div
-                style={{
-                  color:
-                    "#cbd5e1",
-                  marginTop:
-                    "4px",
-                }}
-              >
-                Total:{" "}
-                {systemInfo.memory
-                  .totalGB ??
-                  "Unknown"}{" "}
-                GB
-                <br />
-                Free:{" "}
-                {systemInfo.memory
-                  .freeGB ??
-                  "Unknown"}{" "}
-                GB
-                <br />
-                Used by ALEX:{" "}
-                {systemInfo.memory
-                  .usedByAlexMB ??
-                  "Unknown"}{" "}
-                MB
-              </div>
-            </div>
-          )}
-
-          {systemInfo.disk && (
-            <div
-              style={{
-                marginBottom:
-                  "10px",
-              }}
-            >
-              <div
-                style={{
-                  color:
-                    "#a78bfa",
-                  fontWeight:
-                    600,
-                }}
-              >
-                💾 Disk
-              </div>
-
-              <div
-                style={{
-                  color:
-                    "#cbd5e1",
-                  marginTop:
-                    "4px",
-                }}
-              >
-                {Array.isArray(
-                  systemInfo.disk
-                ) ? (
-                  systemInfo.disk.map(
-                    (
-                      disk,
-                      index
-                    ) => (
-                      <div
-                        key={
-                          index
-                        }
-                        style={{
-                          marginBottom:
-                            "6px",
-                        }}
-                      >
-                        {disk.drive ||
-                          `Drive ${
-                            index +
-                            1
-                          }`}
-                        <br />
-                        Total:{" "}
-                        {disk.totalGB ??
-                          "?"}{" "}
-                        GB
-                        <br />
-                        Free:{" "}
-                        {disk.freeGB ??
-                          "?"}{" "}
-                        GB
-                      </div>
-                    )
-                  )
-                ) : (
-                  String(
-                    systemInfo.disk
-                  )
-                )}
-              </div>
-            </div>
-          )}
-
-          {systemInfo.user && (
-            <div
-              style={{
-                marginBottom:
-                  "10px",
-              }}
-            >
-              <div
-                style={{
-                  color:
-                    "#a78bfa",
-                  fontWeight:
-                    600,
-                }}
-              >
-                👤 User
-              </div>
-
-              <div
-                style={{
-                  color:
-                    "#cbd5e1",
-                  marginTop:
-                    "4px",
-                }}
-              >
-                Username:{" "}
-                {
-                  systemInfo.user
-                }
-                <br />
-                Home:{" "}
-                {systemInfo.homeDir ||
-                  "Unknown"}
-              </div>
-            </div>
-          )}
-
-          {systemInfo.node && (
-            <div
-              style={{
-                marginBottom:
-                  "10px",
-              }}
-            >
-              <div
-                style={{
-                  color:
-                    "#a78bfa",
-                  fontWeight:
-                    600,
-                }}
-              >
-                🟢 Node.js
-              </div>
-
-              <div
-                style={{
-                  color:
-                    "#cbd5e1",
-                  marginTop:
-                    "4px",
-                }}
-              >
-                {
-                  systemInfo.node
-                }
-              </div>
-            </div>
-          )}
-
-          {systemInfo.networkInterfaces && (
-            <div>
-              <div
-                style={{
-                  color:
-                    "#a78bfa",
-                  fontWeight:
-                    600,
-                }}
-              >
-                🌐 Network Interfaces
-              </div>
-
-              <div
-                style={{
-                  color:
-                    "#cbd5e1",
-                  marginTop:
-                    "4px",
-                }}
-              >
-                {Array.isArray(
-                  systemInfo.networkInterfaces
-                )
-                  ? systemInfo.networkInterfaces.join(
-                      ", "
-                    )
-                  : String(
-                      systemInfo.networkInterfaces
-                    )}
-              </div>
-            </div>
-          )}
+          <pre
+            style={{
+              margin: 0,
+              whiteSpace:
+                "pre-wrap",
+              wordBreak:
+                "break-word",
+              color:
+                "#94a3b8",
+              fontSize:
+                "11px",
+              maxHeight:
+                "260px",
+              overflowY:
+                "auto",
+            }}
+          >
+            {JSON.stringify(
+              systemInfo,
+              null,
+              2
+            )}
+          </pre>
         </div>
       )}
     </div>
   );
 };
-
-// ============================================================
-// CHAT MESSAGE
-// ============================================================
-
-const ChatMessage = ({
-  message,
-}) => {
-  const isUser =
-    message.role ===
-    "user";
-
-  return (
-    <div
-      style={{
-        display:
-          "flex",
-        gap: "12px",
-        marginBottom:
-          "20px",
-        flexDirection:
-          isUser
-            ? "row-reverse"
-            : "row",
-        alignItems:
-          "flex-start",
-      }}
-    >
-      <div
-        style={{
-          width: "36px",
-          height: "36px",
-          borderRadius:
-            "50%",
-          background:
-            isUser
-              ? "#3b82f6"
-              : "#8b5cf6",
-          display:
-            "flex",
-          alignItems:
-            "center",
-          justifyContent:
-            "center",
-          fontSize:
-            "16px",
-          flexShrink: 0,
-          boxShadow:
-            "0 2px 8px rgba(0,0,0,0.3)",
-        }}
-      >
-        {isUser
-          ? USER_AVATAR
-          : ALEX_AVATAR}
-      </div>
-
-      <div
-        style={{
-          maxWidth:
-            "80%",
-          background:
-            isUser
-              ? "#1e3a5f"
-              : "#16213e",
-          borderRadius:
-            isUser
-              ? "16px 16px 4px 16px"
-              : "16px 16px 16px 4px",
-          padding:
-            "14px 18px",
-          boxShadow:
-            "0 2px 8px rgba(0,0,0,0.2)",
-          minWidth:
-            isUser
-              ? undefined
-              : "60%",
-        }}
-      >
-        <div
-          style={{
-            fontSize:
-              "11px",
-            fontWeight:
-              600,
-            color:
-              isUser
-                ? "#60a5fa"
-                : "#a78bfa",
-            marginBottom:
-              "6px",
-            textTransform:
-              "uppercase",
-            letterSpacing:
-              "0.5px",
-          }}
-        >
-          {isUser
-            ? "You"
-            : "ALEX"}
-        </div>
-
-        <div
-          className="alex-content"
-          dangerouslySetInnerHTML={{
-            __html:
-              renderContent(
-                message.content
-              ),
-          }}
-          style={{
-            color:
-              "#e2e8f0",
-            fontSize:
-              "14px",
-            lineHeight:
-              "1.6",
-            wordBreak:
-              "break-word",
-          }}
-        />
-
-        {!isUser &&
-          message.uploadResult && (
-            <UploadResultPanel
-              upload={
-                message.uploadResult
-              }
-            />
-          )}
-
-        {!isUser &&
-          message.result?.report && (
-            <ReportPanel
-              report={
-                message.result
-                  .report
-              }
-            />
-          )}
-
-        {message.result &&
-          message.result.route !==
-            "chat" &&
-          message.result
-            .result?.route !==
-            "chat" &&
-          message.result.intent
-            ?.intent !==
-            "GENERAL_CHAT" &&
-          message.result.result
-            ?.intent?.intent !==
-            "GENERAL_CHAT" && (
-            <ResultCard
-              result={
-                message.result
-              }
-            />
-          )}
-
-        <div
-          style={{
-            fontSize:
-              "11px",
-            color:
-              "#475569",
-            marginTop:
-              "8px",
-            textAlign:
-              isUser
-                ? "left"
-                : "right",
-          }}
-        >
-          {new Date(
-            message.timestamp
-          ).toLocaleTimeString(
-            [],
-            {
-              hour:
-                "2-digit",
-              minute:
-                "2-digit",
-            }
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ============================================================
-// SUGGESTIONS
-// ============================================================
-
-const SUGGESTED_COMMANDS = [
-  {
-    label:
-      "📤 Upload & Fix a File",
-    command:
-      "__UPLOAD__",
-  },
-  {
-    label:
-      "🔍 Deep Analysis (read-only)",
-    command:
-      "Ab actual project analysis karo. Sirf actual code inspect karke detailed findings do — har bug, security vulnerability, code quality issue, severity + file path ke saath. Koi file modify/delete mat karo.",
-  },
-  {
-    label:
-      "💻 Laptop Info",
-    command:
-      "Mere laptop ka complete info do — CPU, RAM, disk, OS sab kuch",
-  },
-  {
-    label:
-      "🌐 Browser Me Kholo",
-    command:
-      "google.com browser me khol do",
-  },
-  {
-    label:
-      "📊 System Status",
-    command:
-      "Show me the complete system status",
-  },
-  {
-    label:
-      "📁 Folder Dikhao",
-    command:
-      "Mere desktop ka folder list dikhao",
-  },
-  {
-    label:
-      "🧪 Run Tests",
-    command:
-      "Run the test suite and report results",
-  },
-  {
-    label:
-      "🛡️ Security Scan",
-    command:
-      "Scan the project for security vulnerabilities",
-  },
-];
 
 // ============================================================
 // MAIN ALEX CHAT
@@ -1578,6 +1004,7 @@ const SUGGESTED_COMMANDS = [
 const AlexChat = ({
   isOpen,
   onClose,
+  ownerMode = false,
 }) => {
   const [messages, setMessages] =
     useState([]);
@@ -1595,41 +1022,18 @@ const AlexChat = ({
     sessionId,
     setSessionId,
   ] = useState(() => {
-    const saved =
-      localStorage.getItem(
-        getSessionStorageKey()
-      );
+    try {
+      const saved =
+        localStorage.getItem(
+          getSessionStorageKey()
+        );
 
-    if (saved) return saved;
+      if (saved) {
+        return saved;
+      }
+    } catch {}
 
-    const ownerSession =
-      localStorage.getItem(
-        getOwnerMemoryStorageKey()
-      );
-
-    if (ownerSession) {
-      localStorage.setItem(
-        getSessionStorageKey(),
-        ownerSession
-      );
-
-      return ownerSession;
-    }
-
-    const newSession =
-      createSessionId();
-
-    localStorage.setItem(
-      getSessionStorageKey(),
-      newSession
-    );
-
-    localStorage.setItem(
-      getOwnerMemoryStorageKey(),
-      newSession
-    );
-
-    return newSession;
+    return createSessionId();
   });
 
   const [error, setError] =
@@ -1649,22 +1053,36 @@ const AlexChat = ({
   ] = useState("");
 
   const [adminKey, setAdminKey] =
-    useState(
-      () =>
-        localStorage.getItem(
-          ADMIN_KEY_STORAGE_KEY
-        ) || ""
-    );
+    useState(() => {
+      if (!ownerMode) return "";
+
+      try {
+        return (
+          localStorage.getItem(
+            ADMIN_KEY_STORAGE_KEY
+          ) || ""
+        );
+      } catch {
+        return "";
+      }
+    });
 
   const [
     windowsAgentToken,
     setWindowsAgentToken,
-  ] = useState(
-    () =>
-      localStorage.getItem(
-        WINDOWS_AGENT_TOKEN_STORAGE_KEY
-      ) || ""
-  );
+  ] = useState(() => {
+    if (!ownerMode) return "";
+
+    try {
+      return (
+        localStorage.getItem(
+          WINDOWS_AGENT_TOKEN_STORAGE_KEY
+        ) || ""
+      );
+    } catch {
+      return "";
+    }
+  });
 
   const [
     showWindowsAgentTokenInput,
@@ -1692,35 +1110,23 @@ const AlexChat = ({
   // AUTH
   // ==========================================================
 
-  const getToken =
-    useCallback(() => {
-      try {
-        return (
-          localStorage.getItem(
-            "token"
-          ) || ""
-        );
-      } catch {
-        return "";
-      }
-    }, []);
+  const getToken = useCallback(
+    () => getCurrentToken(),
+    []
+  );
 
   const hasAuthentication =
     useCallback(() => {
       return Boolean(
-        getToken() ||
-          adminKey
+        getToken()
       );
-    }, [
-      getToken,
-      adminKey,
-    ]);
+    }, [getToken]);
 
   const authenticated =
     hasAuthentication();
 
   // ==========================================================
-  // JSON HEADERS
+  // AUTH HEADERS
   // ==========================================================
 
   const getAuthHeaders =
@@ -1736,7 +1142,15 @@ const AlexChat = ({
       if (token) {
         headers.Authorization =
           `Bearer ${token}`;
-      } else if (adminKey) {
+      }
+
+      // ADMIN_KEY is intentionally
+      // available ONLY in owner mode.
+      if (
+        ownerMode &&
+        !token &&
+        adminKey
+      ) {
         headers[
           "x-admin-key"
         ] = adminKey;
@@ -1745,15 +1159,9 @@ const AlexChat = ({
       return headers;
     }, [
       getToken,
+      ownerMode,
       adminKey,
     ]);
-
-  // ==========================================================
-  // FORM DATA HEADERS
-  // IMPORTANT:
-  // Do not manually set multipart Content-Type.
-  // Axios/browser adds boundary automatically.
-  // ==========================================================
 
   const getUploadAuthHeaders =
     useCallback(() => {
@@ -1765,7 +1173,13 @@ const AlexChat = ({
       if (token) {
         headers.Authorization =
           `Bearer ${token}`;
-      } else if (adminKey) {
+      }
+
+      if (
+        ownerMode &&
+        !token &&
+        adminKey
+      ) {
         headers[
           "x-admin-key"
         ] = adminKey;
@@ -1774,8 +1188,205 @@ const AlexChat = ({
       return headers;
     }, [
       getToken,
+      ownerMode,
       adminKey,
     ]);
+
+  // ==========================================================
+  // SESSION PERSISTENCE
+  // ==========================================================
+
+  const persistSessionId =
+    useCallback(
+      (id) => {
+        if (!id) return;
+
+        setSessionId(id);
+
+        try {
+          localStorage.setItem(
+            getSessionStorageKey(),
+            id
+          );
+
+          if (ownerMode) {
+            localStorage.setItem(
+              getOwnerMemoryStorageKey(),
+              id
+            );
+          }
+        } catch {}
+      },
+      [ownerMode]
+    );
+
+  // ==========================================================
+  // LOAD SESSION FROM SERVER
+  // ==========================================================
+
+  const loadSession =
+    useCallback(
+      async (id) => {
+        if (
+          !id ||
+          !authenticated
+        ) {
+          return false;
+        }
+
+        try {
+          const response =
+            await axios.get(
+              `${API_BASE}/api/alex/chat/sessions/${encodeURIComponent(
+                id
+              )}`,
+              {
+                headers:
+                  getAuthHeaders(),
+                timeout: 30000,
+              }
+            );
+
+          const data =
+            response?.data;
+
+          if (
+            data?.success &&
+            data?.data
+          ) {
+            const session =
+              data.data;
+
+            if (
+              Array.isArray(
+                session.messages
+              )
+            ) {
+              const restored =
+                session.messages
+                  .map(
+                    (message) => ({
+                      ...message,
+                      role:
+                        message.role ===
+                        "assistant"
+                          ? "alex"
+                          : message.role,
+                    })
+                  );
+
+              setMessages(
+                restored
+              );
+            }
+
+            if (
+              session.metrics
+            ) {
+              setMetrics(
+                session.metrics
+              );
+            }
+
+            return true;
+          }
+        } catch (err) {
+          const status =
+            err?.response?.status;
+
+          // A missing/old session
+          // should not break chat.
+          if (
+            status === 404
+          ) {
+            try {
+              localStorage.removeItem(
+                getSessionStorageKey()
+              );
+            } catch {}
+          }
+
+          // Never delete a valid JWT
+          // merely because session restore
+          // failed.
+        }
+
+        return false;
+      },
+      [
+        authenticated,
+        getAuthHeaders,
+      ]
+    );
+
+  // ==========================================================
+  // INITIAL SESSION
+  // ==========================================================
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let active = true;
+
+    const initialize =
+      async () => {
+        if (!authenticated) {
+          if (active) {
+            setMessages([]);
+          }
+          return;
+        }
+
+        let id =
+          sessionId;
+
+        if (!id) {
+          id =
+            createSessionId();
+
+          persistSessionId(id);
+        }
+
+        const restored =
+          await loadSession(id);
+
+        if (
+          active &&
+          !restored
+        ) {
+          setMessages(
+            (prev) =>
+              prev.length
+                ? prev
+                : [
+                    {
+                      role: "alex",
+                      type: "system",
+                      content:
+                        ownerMode
+                          ? "🤖 **ALEX Owner Mode**\n\nReady. Owner-level commands remain protected by server-side authorization."
+                          : "🤖 **ALEX**\n\nHi! Main ALEX hoon. Aap mujhse questions, project help, analysis aur normal tasks ke baare mein baat kar sakte ho.",
+                      timestamp:
+                        new Date().toISOString(),
+                    },
+                  ]
+          );
+        }
+      };
+
+    initialize();
+
+    return () => {
+      active = false;
+    };
+  }, [
+    isOpen,
+    authenticated,
+    ownerMode,
+    sessionId,
+    loadSession,
+    persistSessionId,
+  ]);
 
   // ==========================================================
   // SCROLL
@@ -1785,8 +1396,7 @@ const AlexChat = ({
     useCallback(() => {
       messagesEndRef.current?.scrollIntoView(
         {
-          behavior:
-            "smooth",
+          behavior: "smooth",
         }
       );
     }, []);
@@ -1805,21 +1415,25 @@ const AlexChat = ({
   useEffect(() => {
     if (!isOpen) return;
 
-    setTimeout(() => {
-      if (
-        showWindowsAgentTokenInput
-      ) {
-        return;
-      }
+    const timer =
+      setTimeout(() => {
+        if (
+          showWindowsAgentTokenInput
+        ) {
+          return;
+        }
 
-      if (
-        showAdminKeyInput
-      ) {
-        adminKeyInputRef.current?.focus();
-      } else {
-        inputRef.current?.focus();
-      }
-    }, 300);
+        if (
+          showAdminKeyInput
+        ) {
+          adminKeyInputRef.current?.focus();
+        } else {
+          inputRef.current?.focus();
+        }
+      }, 300);
+
+    return () =>
+      clearTimeout(timer);
   }, [
     isOpen,
     showAdminKeyInput,
@@ -1827,30 +1441,40 @@ const AlexChat = ({
   ]);
 
   // ==========================================================
-  // SAVE ADMIN KEY
+  // OWNER ADMIN KEY
   // ==========================================================
 
   const handleSaveAdminKey =
     () => {
+      if (!ownerMode) {
+        return;
+      }
+
       const key =
         adminKeyInput.trim();
 
       if (key.length < 4) {
+        setError(
+          "Valid admin key required."
+        );
         return;
       }
 
       setAdminKey(key);
 
-      localStorage.setItem(
-        ADMIN_KEY_STORAGE_KEY,
-        key
-      );
+      try {
+        localStorage.setItem(
+          ADMIN_KEY_STORAGE_KEY,
+          key
+        );
+      } catch {}
 
       setShowAdminKeyInput(
         false
       );
 
       setAdminKeyInput("");
+      setError(null);
 
       setMessages(
         (prev) => [
@@ -1867,15 +1491,17 @@ const AlexChat = ({
       );
     };
 
-  // ==========================================================
-  // CLEAR ADMIN KEY
-  // ==========================================================
-
   const handleClearAdminKey =
     () => {
-      localStorage.removeItem(
-        ADMIN_KEY_STORAGE_KEY
-      );
+      if (!ownerMode) {
+        return;
+      }
+
+      try {
+        localStorage.removeItem(
+          ADMIN_KEY_STORAGE_KEY
+        );
+      } catch {}
 
       setAdminKey("");
 
@@ -1895,36 +1521,31 @@ const AlexChat = ({
     };
 
   // ==========================================================
-  // WINDOWS AGENT TOKEN
+  // WINDOWS AGENT
   // ==========================================================
 
   const handleSaveWindowsAgentToken =
     () => {
+      if (!ownerMode) {
+        return;
+      }
+
       const token =
         windowsAgentTokenInput.trim();
 
       if (!token) {
-        setMessages(
-          (prev) => [
-            ...prev,
-            {
-              role: "alex",
-              type: "system",
-              content:
-                "❌ Windows Agent pairing token required.",
-              timestamp:
-                new Date().toISOString(),
-            },
-          ]
+        setError(
+          "Windows Agent pairing token required."
         );
-
         return;
       }
 
-      localStorage.setItem(
-        WINDOWS_AGENT_TOKEN_STORAGE_KEY,
-        token
-      );
+      try {
+        localStorage.setItem(
+          WINDOWS_AGENT_TOKEN_STORAGE_KEY,
+          token
+        );
+      } catch {}
 
       setWindowsAgentToken(
         token
@@ -1945,7 +1566,7 @@ const AlexChat = ({
             role: "alex",
             type: "system",
             content:
-              "✅ Windows Agent paired successfully. Local laptop tools are now available to authorized ALEX commands.",
+              "✅ Windows Agent paired successfully. Local laptop tools are available only to authorized ALEX commands.",
             timestamp:
               new Date().toISOString(),
           },
@@ -1955,17 +1576,19 @@ const AlexChat = ({
 
   const handleClearWindowsAgentToken =
     () => {
-      localStorage.removeItem(
-        WINDOWS_AGENT_TOKEN_STORAGE_KEY
-      );
+      if (!ownerMode) {
+        return;
+      }
 
-      setWindowsAgentToken(
-        ""
-      );
+      try {
+        localStorage.removeItem(
+          WINDOWS_AGENT_TOKEN_STORAGE_KEY
+        );
+      } catch {}
 
-      setWindowsAgentTokenInput(
-        ""
-      );
+      setWindowsAgentToken("");
+
+      setWindowsAgentTokenInput("");
 
       setShowWindowsAgentTokenInput(
         false
@@ -1991,11 +1614,11 @@ const AlexChat = ({
   // ==========================================================
 
   const handleFileSelect =
-    async (e) => {
+    async (event) => {
       const file =
-        e.target.files?.[0];
+        event.target.files?.[0];
 
-      e.target.value = "";
+      event.target.value = "";
 
       if (
         !file ||
@@ -2014,26 +1637,21 @@ const AlexChat = ({
       }
 
       setError(null);
-
       setUploading(true);
-
       setLoading(true);
 
-      const userMsg = {
+      const userMessage = {
         role: "user",
         type: "message",
         content:
           `📤 Uploaded file: **${file.name}** (${(
-            file.size /
-            1024
-          ).toFixed(
-            1
-          )} KB)`,
+            file.size / 1024
+          ).toFixed(1)} KB)`,
         timestamp:
           new Date().toISOString(),
       };
 
-      const typingMsg = {
+      const typingMessage = {
         role: "alex",
         type: "typing",
         content: "...",
@@ -2044,8 +1662,8 @@ const AlexChat = ({
       setMessages(
         (prev) => [
           ...prev,
-          userMsg,
-          typingMsg,
+          userMessage,
+          typingMessage,
         ]
       );
 
@@ -2086,11 +1704,17 @@ const AlexChat = ({
         setMessages(
           (prev) =>
             prev.filter(
-              (m) =>
-                m.type !==
+              (message) =>
+                message.type !==
                 "typing"
             )
         );
+
+        if (data?.sessionId) {
+          persistSessionId(
+            data.sessionId
+          );
+        }
 
         if (data?.success) {
           const parts = [];
@@ -2110,7 +1734,7 @@ const AlexChat = ({
               ?.syntaxValid
           ) {
             parts.push(
-              "\n✅ **Fixed code passed syntax validation.** Copy/download karke use karo."
+              "\n✅ **Fixed code passed syntax validation.**"
             );
           }
 
@@ -2147,8 +1771,7 @@ const AlexChat = ({
               ...prev,
               {
                 role: "alex",
-                type:
-                  "error",
+                type: "error",
                 content:
                   `❌ **Upload failed:** ${
                     data?.error ||
@@ -2167,8 +1790,8 @@ const AlexChat = ({
         setMessages(
           (prev) =>
             prev.filter(
-              (m) =>
-                m.type !==
+              (message) =>
+                message.type !==
                 "typing"
             )
         );
@@ -2188,7 +1811,31 @@ const AlexChat = ({
           "Unknown upload error";
 
         if (
-          status === 401 ||
+          status === 401
+        ) {
+          try {
+            localStorage.removeItem(
+              "token"
+            );
+            sessionStorage.removeItem(
+              "token"
+            );
+          } catch {}
+
+          setMessages(
+            (prev) => [
+              ...prev,
+              {
+                role: "alex",
+                type: "error",
+                content:
+                  `❌ **Authentication failed (401)**\n\n${serverMessage}\n\nLogin session expired/invalid hai. Dobara login karo.`,
+                timestamp:
+                  new Date().toISOString(),
+              },
+            ]
+          );
+        } else if (
           status === 403
         ) {
           setMessages(
@@ -2196,10 +1843,9 @@ const AlexChat = ({
               ...prev,
               {
                 role: "alex",
-                type:
-                  "error",
+                type: "error",
                 content:
-                  `❌ **Authentication failed (${status})**\n\n${serverMessage}\n\nLogin session check karo.`,
+                  `❌ **Access denied (403)**\n\n${serverMessage}`,
                 timestamp:
                   new Date().toISOString(),
               },
@@ -2211,8 +1857,7 @@ const AlexChat = ({
               ...prev,
               {
                 role: "alex",
-                type:
-                  "error",
+                type: "error",
                 content:
                   `❌ **Upload error:** ${serverMessage}`,
                 timestamp:
@@ -2222,10 +1867,7 @@ const AlexChat = ({
           );
         }
       } finally {
-        setUploading(
-          false
-        );
-
+        setUploading(false);
         setLoading(false);
       }
     };
@@ -2235,11 +1877,10 @@ const AlexChat = ({
   // ==========================================================
 
   const sendMessage =
-    async (text) => {
+    async (value) => {
       const message =
-        typeof text ===
-        "string"
-          ? text.trim()
+        typeof value === "string"
+          ? value.trim()
           : input.trim();
 
       if (
@@ -2259,28 +1900,27 @@ const AlexChat = ({
       }
 
       const currentWindowsAgentToken =
-        localStorage.getItem(
-          WINDOWS_AGENT_TOKEN_STORAGE_KEY
-        ) ||
-        windowsAgentToken ||
-        "";
+        ownerMode
+          ? localStorage.getItem(
+              WINDOWS_AGENT_TOKEN_STORAGE_KEY
+            ) ||
+            windowsAgentToken ||
+            ""
+          : "";
 
       setInput("");
-
       setLoading(true);
-
       setError(null);
 
-      const userMsg = {
+      const userMessage = {
         role: "user",
         type: "message",
-        content:
-          message,
+        content: message,
         timestamp:
           new Date().toISOString(),
       };
 
-      const typingMsg = {
+      const typingMessage = {
         role: "alex",
         type: "typing",
         content: "...",
@@ -2291,8 +1931,8 @@ const AlexChat = ({
       setMessages(
         (prev) => [
           ...prev,
-          userMsg,
-          typingMsg,
+          userMessage,
+          typingMessage,
         ]
       );
 
@@ -2303,8 +1943,13 @@ const AlexChat = ({
             {
               message,
               sessionId,
-              windowsAgentToken:
-                currentWindowsAgentToken,
+              ...(ownerMode &&
+              currentWindowsAgentToken
+                ? {
+                    windowsAgentToken:
+                      currentWindowsAgentToken,
+                  }
+                : {}),
             },
             {
               headers:
@@ -2320,54 +1965,39 @@ const AlexChat = ({
         setMessages(
           (prev) =>
             prev.filter(
-              (m) =>
-                m.type !==
+              (item) =>
+                item.type !==
                 "typing"
             )
         );
 
-        if (
-          data?.sessionId
-        ) {
-          setSessionId(
-            data.sessionId
-          );
-
-          localStorage.setItem(
-            getSessionStorageKey(),
-            data.sessionId
-          );
-
-          localStorage.setItem(
-            getOwnerMemoryStorageKey(),
+        if (data?.sessionId) {
+          persistSessionId(
             data.sessionId
           );
         }
 
-        if (
-          data?.metrics
-        ) {
+        if (data?.metrics) {
           setMetrics(
             data.metrics
           );
         }
 
-        if (
-          data?.success
-        ) {
+        if (data?.success) {
           setMessages(
             (prev) => [
               ...prev,
               {
                 role: "alex",
-                type:
-                  "result",
+                type: "result",
                 content:
                   data.response ||
                   data.message ||
                   "ALEX completed the request.",
                 result:
                   data.result,
+                report:
+                  data.report,
                 timestamp:
                   new Date().toISOString(),
               },
@@ -2379,15 +2009,14 @@ const AlexChat = ({
               ...prev,
               {
                 role: "alex",
-                type:
-                  "error",
+                type: "error",
                 content:
                   data?.response ||
                   data?.message ||
                   data?.error ||
                   "ALEX request failed.",
                 result:
-                  data.result,
+                  data?.result,
                 timestamp:
                   new Date().toISOString(),
               },
@@ -2398,8 +2027,8 @@ const AlexChat = ({
         setMessages(
           (prev) =>
             prev.filter(
-              (m) =>
-                m.type !==
+              (item) =>
+                item.type !==
                 "typing"
             )
         );
@@ -2408,7 +2037,7 @@ const AlexChat = ({
           err?.response
             ?.status;
 
-        const serverMsg =
+        const serverMessage =
           err?.response
             ?.data
             ?.message ||
@@ -2426,107 +2055,70 @@ const AlexChat = ({
             ?.response ||
           "";
 
-        // ======================================================
-        // AUTH FAILURE
-        // ======================================================
-
         if (
-          status === 401 ||
+          status === 401
+        ) {
+          try {
+            localStorage.removeItem(
+              "token"
+            );
+
+            sessionStorage.removeItem(
+              "token"
+            );
+          } catch {}
+
+          setMessages(
+            (prev) => [
+              ...prev,
+              {
+                role: "alex",
+                type: "error",
+                content:
+                  `❌ **Authentication failed (401)**\n\n${
+                    serverMessage ||
+                    serverError ||
+                    "Login session invalid ya expired hai."
+                  }\n\nPlease dobara login karo.`,
+                timestamp:
+                  new Date().toISOString(),
+              },
+            ]
+          );
+        } else if (
           status === 403
         ) {
-          const token =
-            getToken();
-
-          // ----------------------------------------------------
-          // JWT FAILED
-          // ----------------------------------------------------
-
-          if (token) {
-            try {
-              localStorage.removeItem(
-                "token"
-              );
-            } catch {}
-
-            setMessages(
-              (prev) => [
-                ...prev,
-                {
-                  role: "alex",
-                  type:
-                    "error",
-                  content:
-                    `❌ **Authentication failed (${status})**\n\n${
-                      serverMsg ||
-                      serverError ||
-                      "Login session invalid ya expired hai."
-                    }\n\nPlease logout karke dobara login karo.`,
-                  timestamp:
-                    new Date().toISOString(),
-                },
-              ]
-            );
-          }
-
-          // ----------------------------------------------------
-          // ADMIN KEY FAILED
-          // ----------------------------------------------------
-
-          else if (
-            adminKey
-          ) {
-            setMessages(
-              (prev) => [
-                ...prev,
-                {
-                  role: "alex",
-                  type:
-                    "error",
-                  content:
-                    `❌ **Access denied (${status})**\n\nSaved admin key server ne reject kar di.\n\nAdmin key clear karke dobara valid key set karo.`,
-                  timestamp:
-                    new Date().toISOString(),
-                },
-              ]
-            );
-          }
-
-          // ----------------------------------------------------
-          // NO AUTH
-          // ----------------------------------------------------
-
-          else {
-            setShowAdminKeyInput(
-              true
-            );
-
-            setMessages(
-              (prev) => [
-                ...prev,
-                {
-                  role: "alex",
-                  type:
-                    "error",
-                  content:
-                    "🔑 **Authentication required.** Please login first.",
-                  timestamp:
-                    new Date().toISOString(),
-                },
-              ]
-            );
-          }
+          // IMPORTANT:
+          // Do NOT delete JWT on 403.
+          // 403 can mean permission/role denial.
+          setMessages(
+            (prev) => [
+              ...prev,
+              {
+                role: "alex",
+                type: "error",
+                content:
+                  `❌ **Access denied (403)**\n\n${
+                    serverMessage ||
+                    serverError ||
+                    "Aapke account ko is action ki permission nahi hai."
+                  }`,
+                timestamp:
+                  new Date().toISOString(),
+              },
+            ]
+          );
         } else {
           setMessages(
             (prev) => [
               ...prev,
               {
                 role: "alex",
-                type:
-                  "error",
+                type: "error",
                 content:
                   `❌ **Error:** ${
                     serverResponse ||
-                    serverMsg ||
+                    serverMessage ||
                     serverError ||
                     err?.message ||
                     "Unknown error"
@@ -2538,9 +2130,7 @@ const AlexChat = ({
           );
         }
       } finally {
-        setLoading(
-          false
-        );
+        setLoading(false);
       }
     };
 
@@ -2549,30 +2139,29 @@ const AlexChat = ({
   // ==========================================================
 
   const handleKeyDown =
-    (e) => {
+    (event) => {
       if (
-        e.key ===
+        event.key ===
           "Enter" &&
-        !e.shiftKey
+        !event.shiftKey
       ) {
-        e.preventDefault();
-
+        event.preventDefault();
         sendMessage();
       }
     };
 
   // ==========================================================
-  // SUGGESTED COMMAND
+  // SUGGESTIONS
   // ==========================================================
 
   const handleSuggested =
-    (cmd) => {
+    (command) => {
       if (
-        cmd ===
+        command ===
         "__UPLOAD__"
       ) {
         if (
-          !hasAuthentication()
+          !authenticated
         ) {
           setError(
             "Login required."
@@ -2581,11 +2170,14 @@ const AlexChat = ({
         }
 
         fileInputRef.current?.click();
-
         return;
       }
 
-      sendMessage(cmd);
+      setInput(command);
+
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 50);
     };
 
   // ==========================================================
@@ -2594,36 +2186,59 @@ const AlexChat = ({
 
   const resetSession =
     async () => {
-      if (sessionId) {
-        try {
+      if (loading) return;
+
+      const oldSession =
+        sessionId;
+
+      setMessages([]);
+      setMetrics(null);
+      setError(null);
+
+      const newSession =
+        createSessionId();
+
+      persistSessionId(
+        newSession
+      );
+
+      try {
+        if (
+          oldSession &&
+          authenticated
+        ) {
           await axios.delete(
-            `${API_BASE}/api/alex/chat/sessions/${sessionId}`,
+            `${API_BASE}/api/alex/chat/sessions/${encodeURIComponent(
+              oldSession
+            )}`,
             {
               headers:
                 getAuthHeaders(),
+              timeout: 30000,
             }
           );
-        } catch {}
+        }
+      } catch {
+        // Local reset still succeeds.
       }
 
-      localStorage.removeItem(
-        getSessionStorageKey()
-      );
-
-      localStorage.removeItem(
-        getOwnerMemoryStorageKey()
-      );
-
-      setSessionId(
-        createSessionId()
-      );
-
-      setMessages([]);
-
-      setMetrics(null);
-
-      setError(null);
+      setMessages([
+        {
+          role: "alex",
+          type: "system",
+          content:
+            ownerMode
+              ? "🧠 New owner session started."
+              : "🧠 New ALEX session started.",
+          timestamp:
+            new Date().toISOString(),
+        },
+      ]);
     };
+
+  // ==========================================================
+  // CLOSE
+  // ==========================================================
 
   if (!isOpen) {
     return null;
@@ -2636,60 +2251,65 @@ const AlexChat = ({
   return (
     <div
       style={{
-        position:
-          "fixed",
-        bottom: "24px",
-        right: "24px",
-        width: "440px",
-        height: "620px",
+        position: "fixed",
+        inset: 0,
+        zIndex: 99999,
         background:
-          "linear-gradient(180deg, #0f0f23 0%, #1a1a2e 100%)",
-        borderRadius:
-          "16px",
-        boxShadow:
-          "0 20px 60px rgba(0,0,0,0.5), 0 0 80px rgba(139,92,246,0.15)",
-        display:
-          "flex",
-        flexDirection:
-          "column",
-        overflow:
-          "hidden",
-        zIndex:
-          9999,
-        border:
-          "1px solid rgba(139,92,246,0.2)",
-        fontFamily:
-          "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+          "rgba(2,6,23,0.78)",
+        backdropFilter:
+          "blur(8px)",
+        display: "flex",
+        alignItems:
+          "center",
+        justifyContent:
+          "center",
+        padding: "16px",
+      }}
+      onMouseDown={(event) => {
+        if (
+          event.target ===
+          event.currentTarget
+        ) {
+          onClose?.();
+        }
       }}
     >
-      {/* =====================================================
-          HEADER
-          ===================================================== */}
-
       <div
         style={{
-          padding:
-            "16px 20px",
+          width:
+            "min(1100px, 100%)",
+          height:
+            "min(850px, 94vh)",
           background:
-            "linear-gradient(135deg, #1e1b4b, #312e81)",
-          borderBottom:
-            "1px solid rgba(139,92,246,0.2)",
-          display:
-            "flex",
-          alignItems:
-            "center",
-          justifyContent:
-            "space-between",
-          flexShrink: 0,
+            "linear-gradient(180deg,#111127 0%,#080817 100%)",
+          border:
+            "1px solid rgba(139,92,246,0.35)",
+          borderRadius: "18px",
+          overflow: "hidden",
+          display: "flex",
+          flexDirection:
+            "column",
+          boxShadow:
+            "0 30px 100px rgba(0,0,0,0.55)",
         }}
       >
+        {/* ==================================================
+            HEADER
+        ================================================== */}
+
         <div
           style={{
-            display:
-              "flex",
+            minHeight: "64px",
+            padding:
+              "10px 14px",
+            display: "flex",
             alignItems:
               "center",
             gap: "12px",
+            borderBottom:
+              "1px solid rgba(255,255,255,0.07)",
+            background:
+              "rgba(17,17,39,0.96)",
           }}
         >
           <div
@@ -2698,30 +2318,31 @@ const AlexChat = ({
               height: "40px",
               borderRadius:
                 "12px",
-              background:
-                "linear-gradient(135deg, #8b5cf6, #6d28d9)",
-              display:
-                "flex",
+              display: "flex",
               alignItems:
                 "center",
               justifyContent:
                 "center",
-              fontSize:
-                "20px",
+              background:
+                "linear-gradient(135deg,#7c3aed,#2563eb)",
+              fontSize: "21px",
+              flexShrink: 0,
             }}
           >
-            🤖
+            {ALEX_AVATAR}
           </div>
 
-          <div>
+          <div
+            style={{
+              minWidth: 0,
+              flex: 1,
+            }}
+          >
             <div
               style={{
-                color:
-                  "#fff",
-                fontWeight:
-                  700,
-                fontSize:
-                  "16px",
+                color: "#f8fafc",
+                fontWeight: 800,
+                fontSize: "16px",
               }}
             >
               ALEX
@@ -2730,355 +2351,366 @@ const AlexChat = ({
             <div
               style={{
                 color:
-                  "#a78bfa",
-                fontSize:
-                  "11px",
-                display:
-                  "flex",
-                alignItems:
-                  "center",
-                gap: "6px",
+                  ownerMode
+                    ? "#c4b5fd"
+                    : authenticated
+                    ? "#34d399"
+                    : "#f59e0b",
+                fontSize: "11px",
+                marginTop: "2px",
               }}
             >
-              <span
-                style={{
-                  width: "6px",
-                  height:
-                    "6px",
-                  borderRadius:
-                    "50%",
-                  background:
-                    getToken() ||
-                    adminKey
-                      ? "#10b981"
-                      : "#ef4444",
-                  display:
-                    "inline-block",
-                }}
-              />
-
-              {adminKey
+              {ownerMode
                 ? "🔑 Owner Mode"
-                : getToken()
+                : authenticated
                 ? "● Online"
                 : "⛔ Login Required"}
             </div>
           </div>
-        </div>
-
-        <div
-          style={{
-            display:
-              "flex",
-            gap: "8px",
-            alignItems:
-              "center",
-          }}
-        >
-          {adminKey && (
-            <button
-              onClick={
-                handleClearAdminKey
-              }
-              title="Clear Admin Key"
-              style={{
-                background:
-                  "rgba(239,68,68,0.15)",
-                border:
-                  "none",
-                color:
-                  "#fca5a5",
-                width:
-                  "32px",
-                height:
-                  "32px",
-                borderRadius:
-                  "8px",
-                cursor:
-                  "pointer",
-                fontSize:
-                  "12px",
-              }}
-            >
-              🔑
-            </button>
-          )}
-
-          {windowsAgentToken && (
-            <button
-              onClick={
-                handleClearWindowsAgentToken
-              }
-              title="Clear Windows Agent pairing"
-              style={{
-                background:
-                  "rgba(239,68,68,0.15)",
-                border:
-                  "none",
-                color:
-                  "#fca5a5",
-                width:
-                  "32px",
-                height:
-                  "32px",
-                borderRadius:
-                  "8px",
-                cursor:
-                  "pointer",
-                fontSize:
-                  "12px",
-              }}
-            >
-              🖥️
-            </button>
-          )}
-
-          <button
-            onClick={() => {
-              setShowWindowsAgentTokenInput(
-                true
-              );
-
-              setShowAdminKeyInput(
-                false
-              );
-            }}
-            title="Windows Agent Settings"
-            style={{
-              background:
-                windowsAgentToken
-                  ? "rgba(16,185,129,0.15)"
-                  : "rgba(255,255,255,0.1)",
-              border:
-                "none",
-              color:
-                windowsAgentToken
-                  ? "#6ee7b7"
-                  : "#cbd5e1",
-              width:
-                "32px",
-              height:
-                "32px",
-              borderRadius:
-                "8px",
-              cursor:
-                "pointer",
-              fontSize:
-                "14px",
-            }}
-          >
-            🖥️
-          </button>
 
           {metrics && (
             <div
               style={{
+                display:
+                  "flex",
+                gap: "10px",
                 color:
                   "#64748b",
                 fontSize:
-                  "11px",
-                textAlign:
-                  "right",
+                  "10px",
               }}
             >
-              <div>
-                {
-                  metrics.commandsExecuted ||
-                  0
-                }{" "}
-                ✅
-              </div>
+              {metrics.turns != null && (
+                <span>
+                  Turns:{" "}
+                  {
+                    metrics.turns
+                  }
+                </span>
+              )}
 
-              <div>
-                {
-                  metrics.commandsFailed ||
-                  0
-                }{" "}
-                ❌
-              </div>
+              {metrics.toolCalls !=
+                null && (
+                <span>
+                  Tools:{" "}
+                  {
+                    metrics.toolCalls
+                  }
+                </span>
+              )}
             </div>
+          )}
+
+          {/* OWNER CONTROLS ONLY */}
+
+          {ownerMode && (
+            <>
+              <button
+                onClick={() =>
+                  setShowAdminKeyInput(
+                    (value) =>
+                      !value
+                  )
+                }
+                style={{
+                  background:
+                    showAdminKeyInput
+                      ? "#7c3aed"
+                      : "rgba(255,255,255,0.06)",
+                  border:
+                    "1px solid rgba(255,255,255,0.08)",
+                  color:
+                    "#e2e8f0",
+                  borderRadius:
+                    "8px",
+                  padding:
+                    "7px 9px",
+                  cursor:
+                    "pointer",
+                  fontSize:
+                    "11px",
+                }}
+                title="Admin key"
+              >
+                🔑
+              </button>
+
+              {adminKey && (
+                <button
+                  onClick={
+                    handleClearAdminKey
+                  }
+                  style={{
+                    background:
+                      "rgba(239,68,68,0.1)",
+                    border:
+                      "1px solid rgba(239,68,68,0.2)",
+                    color:
+                      "#fca5a5",
+                    borderRadius:
+                      "8px",
+                    padding:
+                      "7px 9px",
+                    cursor:
+                      "pointer",
+                    fontSize:
+                      "11px",
+                  }}
+                  title="Clear admin key"
+                >
+                  Clear Key
+                </button>
+              )}
+
+              <button
+                onClick={() =>
+                  setShowWindowsAgentTokenInput(
+                    (value) =>
+                      !value
+                  )
+                }
+                style={{
+                  background:
+                    showWindowsAgentTokenInput
+                      ? "#2563eb"
+                      : "rgba(255,255,255,0.06)",
+                  border:
+                    "1px solid rgba(255,255,255,0.08)",
+                  color:
+                    "#e2e8f0",
+                  borderRadius:
+                    "8px",
+                  padding:
+                    "7px 9px",
+                  cursor:
+                    "pointer",
+                  fontSize:
+                    "11px",
+                }}
+                title="Windows Agent"
+              >
+                🖥️
+              </button>
+
+              {windowsAgentToken && (
+                <button
+                  onClick={
+                    handleClearWindowsAgentToken
+                  }
+                  style={{
+                    background:
+                      "rgba(239,68,68,0.1)",
+                    border:
+                      "1px solid rgba(239,68,68,0.2)",
+                    color:
+                      "#fca5a5",
+                    borderRadius:
+                      "8px",
+                    padding:
+                      "7px 9px",
+                    cursor:
+                      "pointer",
+                    fontSize:
+                      "11px",
+                  }}
+                  title="Clear Windows Agent"
+                >
+                  Clear Agent
+                </button>
+              )}
+            </>
           )}
 
           <button
             onClick={
               resetSession
             }
-            title="New Session"
+            disabled={loading}
             style={{
               background:
-                "rgba(255,255,255,0.1)",
+                "rgba(255,255,255,0.06)",
               border:
-                "none",
+                "1px solid rgba(255,255,255,0.08)",
               color:
                 "#cbd5e1",
-              width:
-                "32px",
-              height:
-                "32px",
               borderRadius:
                 "8px",
+              padding:
+                "7px 9px",
               cursor:
-                "pointer",
+                loading
+                  ? "not-allowed"
+                  : "pointer",
               fontSize:
-                "14px",
+                "11px",
+              opacity:
+                loading
+                  ? 0.5
+                  : 1,
             }}
+            title="New session"
           >
-            ↺
+            + New
           </button>
 
           <button
             onClick={onClose}
-            title="Close"
             style={{
-              background:
-                "rgba(255,255,255,0.1)",
+              width: "34px",
+              height: "34px",
+              borderRadius:
+                "9px",
               border:
-                "none",
+                "1px solid rgba(255,255,255,0.08)",
+              background:
+                "rgba(255,255,255,0.06)",
               color:
                 "#cbd5e1",
-              width:
-                "32px",
-              height:
-                "32px",
-              borderRadius:
-                "8px",
               cursor:
                 "pointer",
               fontSize:
                 "18px",
             }}
+            title="Close"
           >
-            ✕
+            ×
           </button>
         </div>
-      </div>
 
-      {/* =====================================================
-          MESSAGES
-          ===================================================== */}
+        {/* ==================================================
+            OWNER KEY INPUT
+        ================================================== */}
 
-      <div
-        style={{
-          flex: 1,
-          overflowY:
-            "auto",
-          padding:
-            "20px",
-          scrollBehavior:
-            "smooth",
-        }}
-      >
-        {showWindowsAgentTokenInput && (
-          <div
-            style={{
-              display:
-                "flex",
-              flexDirection:
-                "column",
-              alignItems:
-                "center",
-              justifyContent:
-                "center",
-              height:
-                "100%",
-              padding:
-                "20px",
-            }}
-          >
+        {ownerMode &&
+          showAdminKeyInput && (
             <div
               style={{
-                fontSize:
-                  "48px",
-                marginBottom:
-                  "16px",
-              }}
-            >
-              🖥️
-            </div>
-
-            <div
-              style={{
-                fontSize:
-                  "18px",
-                fontWeight:
-                  600,
-                color:
-                  "#e2e8f0",
-                marginBottom:
-                  "8px",
-              }}
-            >
-              Windows Agent Pairing
-            </div>
-
-            <div
-              style={{
-                fontSize:
-                  "13px",
-                color:
-                  "#94a3b8",
-                maxWidth:
-                  "320px",
-                textAlign:
-                  "center",
-                marginBottom:
-                  "20px",
-              }}
-            >
-              Paste the pairing
-              token shown when
-              your local Windows
-              Agent starts.
-            </div>
-
-            <div
-              style={{
+                padding:
+                  "10px 14px",
+                borderBottom:
+                  "1px solid rgba(255,255,255,0.06)",
+                background:
+                  "rgba(124,58,237,0.08)",
                 display:
                   "flex",
                 gap: "8px",
-                width:
-                  "100%",
-                maxWidth:
-                  "350px",
               }}
             >
               <input
+                ref={
+                  adminKeyInputRef
+                }
+                value={
+                  adminKeyInput
+                }
+                onChange={(event) =>
+                  setAdminKeyInput(
+                    event.target.value
+                  )
+                }
+                onKeyDown={(
+                  event
+                ) => {
+                  if (
+                    event.key ===
+                    "Enter"
+                  ) {
+                    handleSaveAdminKey();
+                  }
+                }}
                 type="password"
+                placeholder="Owner ADMIN_KEY"
+                style={{
+                  flex: 1,
+                  background:
+                    "#080817",
+                  border:
+                    "1px solid rgba(139,92,246,0.3)",
+                  color:
+                    "#f8fafc",
+                  borderRadius:
+                    "8px",
+                  padding:
+                    "9px 11px",
+                  outline: "none",
+                }}
+              />
+
+              <button
+                onClick={
+                  handleSaveAdminKey
+                }
+                style={{
+                  background:
+                    "#7c3aed",
+                  border: "none",
+                  color: "#fff",
+                  borderRadius:
+                    "8px",
+                  padding:
+                    "0 14px",
+                  cursor:
+                    "pointer",
+                }}
+              >
+                Save
+              </button>
+            </div>
+          )}
+
+        {/* ==================================================
+            WINDOWS AGENT INPUT
+        ================================================== */}
+
+        {ownerMode &&
+          showWindowsAgentTokenInput && (
+            <div
+              style={{
+                padding:
+                  "10px 14px",
+                borderBottom:
+                  "1px solid rgba(255,255,255,0.06)",
+                background:
+                  "rgba(37,99,235,0.08)",
+                display:
+                  "flex",
+                gap: "8px",
+              }}
+            >
+              <input
                 value={
                   windowsAgentTokenInput
                 }
-                onChange={(e) =>
+                onChange={(event) =>
                   setWindowsAgentTokenInput(
-                    e.target.value
+                    event.target.value
                   )
                 }
-                onKeyDown={(e) => {
+                onKeyDown={(
+                  event
+                ) => {
                   if (
-                    e.key ===
+                    event.key ===
                     "Enter"
                   ) {
                     handleSaveWindowsAgentToken();
                   }
                 }}
-                placeholder="Paste Windows Agent token..."
+                type="password"
+                placeholder="Windows Agent pairing token"
                 style={{
                   flex: 1,
                   background:
-                    "rgba(255,255,255,0.05)",
+                    "#080817",
                   border:
-                    "1px solid rgba(16,185,129,0.3)",
-                  borderRadius:
-                    "10px",
-                  padding:
-                    "10px 14px",
+                    "1px solid rgba(37,99,235,0.3)",
                   color:
-                    "#e2e8f0",
-                  fontSize:
-                    "14px",
-                  outline:
-                    "none",
-                  fontFamily:
-                    "monospace",
+                    "#f8fafc",
+                  borderRadius:
+                    "8px",
+                  padding:
+                    "9px 11px",
+                  outline: "none",
                 }}
               />
 
@@ -3088,462 +2720,432 @@ const AlexChat = ({
                 }
                 style={{
                   background:
-                    "linear-gradient(135deg, #10b981, #047857)",
-                  border:
-                    "none",
+                    "#2563eb",
+                  border: "none",
+                  color: "#fff",
                   borderRadius:
-                    "10px",
+                    "8px",
                   padding:
-                    "10px 20px",
-                  color:
-                    "#fff",
+                    "0 14px",
                   cursor:
                     "pointer",
-                  fontSize:
-                    "14px",
-                  fontWeight:
-                    600,
                 }}
               >
                 Pair
               </button>
             </div>
-          </div>
-        )}
+          )}
 
-        {showAdminKeyInput &&
-          !showWindowsAgentTokenInput && (
+        {/* ==================================================
+            CHAT
+        ================================================== */}
+
+        <div
+          style={{
+            flex: 1,
+            overflowY:
+              "auto",
+            padding:
+              "18px",
+            display:
+              "flex",
+            flexDirection:
+              "column",
+            gap: "12px",
+          }}
+        >
+          {!authenticated && (
             <div
               style={{
-                display:
-                  "flex",
-                flexDirection:
-                  "column",
-                alignItems:
+                margin:
+                  "auto",
+                maxWidth:
+                  "500px",
+                textAlign:
                   "center",
-                justifyContent:
-                  "center",
-                height:
-                  "100%",
                 padding:
-                  "20px",
+                  "30px",
+                color:
+                  "#94a3b8",
               }}
             >
               <div
                 style={{
                   fontSize:
-                    "48px",
+                    "42px",
                   marginBottom:
-                    "16px",
+                    "12px",
                 }}
               >
-                🔑
+                🔐
               </div>
 
               <div
                 style={{
+                  color:
+                    "#f8fafc",
                   fontSize:
                     "18px",
                   fontWeight:
-                    600,
-                  color:
-                    "#e2e8f0",
+                    700,
                   marginBottom:
                     "8px",
                 }}
               >
-                Admin Key
+                Login Required
               </div>
 
               <div
                 style={{
                   fontSize:
                     "13px",
-                  color:
-                    "#94a3b8",
-                  maxWidth:
-                    "320px",
-                  textAlign:
-                    "center",
-                  marginBottom:
-                    "20px",
+                  lineHeight:
+                    "1.6",
                 }}
               >
-                Enter the admin key
-                only if you are
-                authorized to use
-                owner/admin mode.
-              </div>
-
-              <div
-                style={{
-                  display:
-                    "flex",
-                  gap: "8px",
-                  width:
-                    "100%",
-                  maxWidth:
-                    "350px",
-                }}
-              >
-                <input
-                  ref={
-                    adminKeyInputRef
-                  }
-                  type="password"
-                  value={
-                    adminKeyInput
-                  }
-                  onChange={(e) =>
-                    setAdminKeyInput(
-                      e.target.value
-                    )
-                  }
-                  onKeyDown={(e) => {
-                    if (
-                      e.key ===
-                      "Enter"
-                    ) {
-                      handleSaveAdminKey();
-                    }
-                  }}
-                  placeholder="Enter admin key..."
-                  style={{
-                    flex: 1,
-                    background:
-                      "rgba(255,255,255,0.05)",
-                    border:
-                      "1px solid rgba(139,92,246,0.3)",
-                    borderRadius:
-                      "10px",
-                    padding:
-                      "10px 14px",
-                    color:
-                      "#e2e8f0",
-                    fontSize:
-                      "14px",
-                    outline:
-                      "none",
-                    fontFamily:
-                      "monospace",
-                  }}
-                />
-
-                <button
-                  onClick={
-                    handleSaveAdminKey
-                  }
-                  style={{
-                    background:
-                      "linear-gradient(135deg, #8b5cf6, #6d28d9)",
-                    border:
-                      "none",
-                    borderRadius:
-                      "10px",
-                    padding:
-                      "10px 20px",
-                    color:
-                      "#fff",
-                    cursor:
-                      "pointer",
-                    fontSize:
-                      "14px",
-                    fontWeight:
-                      600,
-                  }}
-                >
-                  Set Key
-                </button>
+                ALEX use karne ke
+                liye pehle login karo.
               </div>
             </div>
           )}
 
-        {!showAdminKeyInput &&
-          !showWindowsAgentTokenInput &&
-          messages.length === 0 && (
-            <div
-              style={{
-                display:
-                  "flex",
-                flexDirection:
-                  "column",
-                alignItems:
-                  "center",
-                justifyContent:
-                  "center",
-                minHeight:
-                  "100%",
-                color:
-                  "#64748b",
-                textAlign:
-                  "center",
-                padding:
-                  "20px",
-              }}
-            >
-              <div
-                style={{
-                  fontSize:
-                    "48px",
-                  marginBottom:
-                    "16px",
-                }}
-              >
-                🤖
-              </div>
+          {messages.map(
+            (message, index) => {
+              const isUser =
+                message.role ===
+                "user";
 
-              <div
-                style={{
-                  fontSize:
-                    "18px",
-                  fontWeight:
-                    600,
-                  color:
-                    "#94a3b8",
-                  marginBottom:
-                    "8px",
-                }}
-              >
-                ALEX is ready
-              </div>
+              const isTyping =
+                message.type ===
+                "typing";
 
-              <div
-                style={{
-                  fontSize:
-                    "13px",
-                  color:
-                    "#64748b",
-                  maxWidth:
-                    "300px",
-                  marginBottom:
-                    "24px",
-                }}
-              >
-                File upload karke
-                fix karwa ya kuch
-                bhi bolo!
-              </div>
-
-              {hasAuthentication() && (
+              return (
                 <div
+                  key={`${message.timestamp || "message"}-${index}`}
                   style={{
                     display:
                       "flex",
-                    flexDirection:
-                      "column",
-                    gap: "6px",
-                    width:
-                      "100%",
+                    alignItems:
+                      "flex-start",
+                    gap: "10px",
+                    justifyContent:
+                      isUser
+                        ? "flex-end"
+                        : "flex-start",
                   }}
                 >
-                  {SUGGESTED_COMMANDS.map(
-                    (
-                      cmd,
-                      i
-                    ) => (
-                      <button
-                        key={i}
-                        onClick={() =>
-                          handleSuggested(
-                            cmd.command
-                          )
-                        }
-                        style={{
-                          background:
-                            cmd.command ===
-                            "__UPLOAD__"
-                              ? "rgba(16,185,129,0.12)"
-                              : "rgba(139,92,246,0.1)",
-                          border:
-                            cmd.command ===
-                            "__UPLOAD__"
-                              ? "1px solid rgba(16,185,129,0.3)"
-                              : "1px solid rgba(139,92,246,0.2)",
-                          borderRadius:
-                            "8px",
-                          padding:
-                            "8px 14px",
-                          color:
-                            cmd.command ===
-                            "__UPLOAD__"
-                              ? "#6ee7b7"
-                              : "#c4b5fd",
-                          cursor:
-                            "pointer",
-                          fontSize:
-                            "13px",
-                          textAlign:
-                            "left",
-                        }}
-                      >
-                        {
-                          cmd.label
-                        }
-                      </button>
-                    )
+                  {!isUser && (
+                    <div
+                      style={{
+                        width:
+                          "34px",
+                        height:
+                          "34px",
+                        borderRadius:
+                          "10px",
+                        background:
+                          "linear-gradient(135deg,#7c3aed,#2563eb)",
+                        display:
+                          "flex",
+                        alignItems:
+                          "center",
+                        justifyContent:
+                          "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {
+                        ALEX_AVATAR
+                      }
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      maxWidth:
+                        "82%",
+                      minWidth:
+                        "80px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        background:
+                          isUser
+                            ? "linear-gradient(135deg,#2563eb,#4f46e5)"
+                            : message.type ===
+                              "error"
+                            ? "rgba(127,29,29,0.35)"
+                            : message.type ===
+                              "system"
+                            ? "rgba(124,58,237,0.12)"
+                            : "#15152b",
+                        border:
+                          isUser
+                            ? "none"
+                            : "1px solid rgba(255,255,255,0.06)",
+                        color:
+                          "#e2e8f0",
+                        borderRadius:
+                          isUser
+                            ? "14px 14px 4px 14px"
+                            : "14px 14px 14px 4px",
+                        padding:
+                          "11px 13px",
+                        fontSize:
+                          "13px",
+                        lineHeight:
+                          "1.6",
+                        overflow:
+                          "hidden",
+                      }}
+                    >
+                      {isTyping ? (
+                        <div
+                          style={{
+                            display:
+                              "flex",
+                            gap:
+                              "4px",
+                            alignItems:
+                              "center",
+                            height:
+                              "20px",
+                          }}
+                        >
+                          {[0, 1, 2].map(
+                            (dot) => (
+                              <span
+                                key={
+                                  dot
+                                }
+                                style={{
+                                  width:
+                                    "6px",
+                                  height:
+                                    "6px",
+                                  borderRadius:
+                                    "50%",
+                                  background:
+                                    "#94a3b8",
+                                  display:
+                                    "inline-block",
+                                  animation:
+                                    `alexBounce 1.2s infinite ${
+                                      dot *
+                                      0.15
+                                    }s`,
+                                }}
+                              />
+                            )
+                          )}
+                        </div>
+                      ) : (
+                        <div
+                          className="alex-content"
+                          dangerouslySetInnerHTML={{
+                            __html:
+                              renderContent(
+                                message.content
+                              ),
+                          }}
+                        />
+                      )}
+
+                      {message.result && (
+                        <ResultCard
+                          result={
+                            message.result
+                          }
+                        />
+                      )}
+
+                      {message.report && (
+                        <ReportPanel
+                          report={
+                            message.report
+                          }
+                        />
+                      )}
+
+                      {message.uploadResult && (
+                        <UploadResultPanel
+                          upload={
+                            message.uploadResult
+                          }
+                        />
+                      )}
+                    </div>
+
+                    {!isTyping &&
+                      message.timestamp && (
+                        <div
+                          style={{
+                            color:
+                              "#475569",
+                            fontSize:
+                              "9px",
+                            marginTop:
+                              "3px",
+                            textAlign:
+                              isUser
+                                ? "right"
+                                : "left",
+                            padding:
+                              "0 3px",
+                          }}
+                        >
+                          {new Date(
+                            message.timestamp
+                          ).toLocaleTimeString(
+                            [],
+                            {
+                              hour:
+                                "2-digit",
+                              minute:
+                                "2-digit",
+                            }
+                          )}
+                        </div>
+                      )}
+                  </div>
+
+                  {isUser && (
+                    <div
+                      style={{
+                        width:
+                          "34px",
+                        height:
+                          "34px",
+                        borderRadius:
+                          "10px",
+                        background:
+                          "#1e293b",
+                        display:
+                          "flex",
+                        alignItems:
+                          "center",
+                        justifyContent:
+                          "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {
+                        USER_AVATAR
+                      }
+                    </div>
                   )}
                 </div>
+              );
+            }
+          )}
+
+          {error && (
+            <div
+              style={{
+                alignSelf:
+                  "center",
+                color:
+                  "#fca5a5",
+                background:
+                  "rgba(127,29,29,0.2)",
+                border:
+                  "1px solid rgba(239,68,68,0.2)",
+                borderRadius:
+                  "8px",
+                padding:
+                  "7px 12px",
+                fontSize:
+                  "11px",
+              }}
+            >
+              {error}
+            </div>
+          )}
+
+          <div
+            ref={
+              messagesEndRef
+            }
+          />
+        </div>
+
+        {/* ==================================================
+            SUGGESTIONS
+        ================================================== */}
+
+        {authenticated &&
+          messages.length <=
+            2 && (
+            <div
+              style={{
+                padding:
+                  "0 14px 8px",
+                display:
+                  "flex",
+                gap: "7px",
+                flexWrap:
+                  "wrap",
+              }}
+            >
+              {[
+                "Hello ALEX",
+                "Mere project ko analyze karo",
+                "Mujhe code mein help chahiye",
+                "Explain this problem",
+                ...(ownerMode
+                  ? [
+                      "Project health check karo",
+                      "Deep analysis karo",
+                    ]
+                  : []),
+              ].map(
+                (command) => (
+                  <button
+                    key={
+                      command
+                    }
+                    onClick={() =>
+                      handleSuggested(
+                        command
+                      )
+                    }
+                    style={{
+                      background:
+                        "rgba(255,255,255,0.04)",
+                      border:
+                        "1px solid rgba(255,255,255,0.07)",
+                      color:
+                        "#94a3b8",
+                      borderRadius:
+                        "999px",
+                      padding:
+                        "6px 10px",
+                      fontSize:
+                        "10px",
+                      cursor:
+                        "pointer",
+                    }}
+                  >
+                    {command}
+                  </button>
+                )
               )}
             </div>
           )}
 
-        {error &&
-          !showAdminKeyInput &&
-          !showWindowsAgentTokenInput && (
-            <div
-              style={{
-                marginBottom:
-                  "12px",
-                padding:
-                  "10px 12px",
-                borderRadius:
-                  "8px",
-                background:
-                  "rgba(239,68,68,0.1)",
-                border:
-                  "1px solid rgba(239,68,68,0.25)",
-                color:
-                  "#fca5a5",
-                fontSize:
-                  "12px",
-              }}
-            >
-              {error}
+        {/* ==================================================
+            INPUT
+        ================================================== */}
 
-              <button
-                onClick={() =>
-                  setError(
-                    null
-                  )
-                }
-                style={{
-                  float:
-                    "right",
-                  background:
-                    "none",
-                  border:
-                    "none",
-                  color:
-                    "#fca5a5",
-                  cursor:
-                    "pointer",
-                }}
-              >
-                ✕
-              </button>
-            </div>
-          )}
-
-        {!showWindowsAgentTokenInput &&
-          !showAdminKeyInput &&
-          messages.map(
-            (msg, i) =>
-              msg.type ===
-              "typing" ? (
-                <div
-                  key={i}
-                  style={{
-                    display:
-                      "flex",
-                    gap:
-                      "12px",
-                    marginBottom:
-                      "20px",
-                    alignItems:
-                      "center",
-                    padding:
-                      "14px 18px",
-                    background:
-                      "#16213e",
-                    borderRadius:
-                      "16px 16px 16px 4px",
-                    maxWidth:
-                      "80%",
-                  }}
-                >
-                  <div
-                    style={{
-                      color:
-                        "#a78bfa",
-                      fontSize:
-                        "14px",
-                    }}
-                  >
-                    🤖
-                  </div>
-
-                  <div
-                    style={{
-                      display:
-                        "flex",
-                      gap:
-                        "4px",
-                    }}
-                  >
-                    {[0, 1, 2].map(
-                      (j) => (
-                        <span
-                          key={
-                            j
-                          }
-                          style={{
-                            width:
-                              "8px",
-                            height:
-                              "8px",
-                            borderRadius:
-                              "50%",
-                            background:
-                              "#8b5cf6",
-                            animation:
-                              "bounce 1.4s infinite ease-in-out",
-                            animationDelay: `${
-                              j *
-                              0.2
-                            }s`,
-                          }}
-                        />
-                      )
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <ChatMessage
-                  key={i}
-                  message={
-                    msg
-                  }
-                />
-              )
-          )}
-
-        <div
-          ref={
-            messagesEndRef
-          }
-        />
-      </div>
-
-      {/* =====================================================
-          INPUT
-          ===================================================== */}
-
-      <div
-        style={{
-          padding:
-            "12px 16px",
-          borderTop:
-            "1px solid rgba(139,92,246,0.15)",
-          background:
-            "rgba(15,15,35,0.95)",
-          flexShrink: 0,
-        }}
-      >
         <div
           style={{
-            display:
-              "flex",
-            gap: "8px",
+            padding:
+              "10px 14px 14px",
+            borderTop:
+              "1px solid rgba(255,255,255,0.07)",
+            background:
+              "rgba(8,8,23,0.8)",
           }}
         >
           <input
@@ -3551,268 +3153,292 @@ const AlexChat = ({
               fileInputRef
             }
             type="file"
-            accept=".js,.mjs,.cjs,.jsx,.ts,.tsx,.py,.java,.cpp,.c,.html,.css,.json,.sql,.sh,.md,.go,.rb,.php"
             style={{
-              display:
-                "none",
+              display: "none",
             }}
             onChange={
               handleFileSelect
             }
+            accept=".js,.jsx,.ts,.tsx,.json,.css,.html,.txt,.md,.py,.java,.cpp,.c,.pdf,.doc,.docx"
           />
 
-          <button
-            onClick={() => {
-              if (
-                !hasAuthentication()
-              ) {
-                setError(
-                  "Login required. Pehle login karo."
-                );
-                return;
+          <div
+            style={{
+              display:
+                "flex",
+              gap: "8px",
+              alignItems:
+                "flex-end",
+            }}
+          >
+            <button
+              onClick={() => {
+                if (
+                  !authenticated
+                ) {
+                  setError(
+                    "Login required."
+                  );
+                  return;
+                }
+
+                fileInputRef.current?.click();
+              }}
+              disabled={
+                loading ||
+                uploading ||
+                !authenticated
+              }
+              style={{
+                width:
+                  "42px",
+                height:
+                  "42px",
+                flexShrink: 0,
+                borderRadius:
+                  "10px",
+                border:
+                  "1px solid rgba(255,255,255,0.08)",
+                background:
+                  "rgba(255,255,255,0.05)",
+                color:
+                  "#cbd5e1",
+                cursor:
+                  loading ||
+                  uploading ||
+                  !authenticated
+                    ? "not-allowed"
+                    : "pointer",
+                opacity:
+                  loading ||
+                  uploading ||
+                  !authenticated
+                    ? 0.45
+                    : 1,
+                fontSize:
+                  "17px",
+              }}
+              title="Upload file"
+            >
+              📎
+            </button>
+
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(event) =>
+                setInput(
+                  event.target.value
+                )
+              }
+              onKeyDown={
+                handleKeyDown
+              }
+              disabled={
+                loading ||
+                !authenticated
+              }
+              placeholder={
+                authenticated
+                  ? ownerMode
+                    ? "Ask ALEX anything..."
+                    : "ALEX se kuch bhi pucho..."
+                  : "Login required..."
+              }
+              rows={1}
+              style={{
+                flex: 1,
+                minHeight:
+                  "42px",
+                maxHeight:
+                  "130px",
+                resize:
+                  "vertical",
+                background:
+                  "#0d0d21",
+                border:
+                  "1px solid rgba(255,255,255,0.08)",
+                color:
+                  "#f8fafc",
+                borderRadius:
+                  "10px",
+                padding:
+                  "11px 12px",
+                outline: "none",
+                fontSize:
+                  "13px",
+                lineHeight:
+                  "1.4",
+              }}
+            />
+
+            <button
+              onClick={() =>
+                sendMessage()
+              }
+              disabled={
+                loading ||
+                !input.trim() ||
+                !authenticated
+              }
+              style={{
+                width:
+                  "42px",
+                height:
+                  "42px",
+                flexShrink: 0,
+                borderRadius:
+                  "10px",
+                border: "none",
+                background:
+                  loading ||
+                  !input.trim() ||
+                  !authenticated
+                    ? "#334155"
+                    : "linear-gradient(135deg,#7c3aed,#2563eb)",
+                color: "#fff",
+                cursor:
+                  loading ||
+                  !input.trim() ||
+                  !authenticated
+                    ? "not-allowed"
+                    : "pointer",
+                fontSize:
+                  "17px",
+              }}
+              title="Send"
+            >
+              {loading
+                ? "..."
+                : "➤"}
+            </button>
+          </div>
+
+          <div
+            style={{
+              marginTop:
+                "6px",
+              display:
+                "flex",
+              justifyContent:
+                "space-between",
+              color:
+                "#475569",
+              fontSize:
+                "9px",
+            }}
+          >
+            <span>
+              Enter = send • Shift+Enter = new line
+            </span>
+
+            <span>
+              {ownerMode
+                ? "Owner controls protected"
+                : "ALEX"}
+            </span>
+          </div>
+        </div>
+
+        <style>
+          {`
+            .alex-content p {
+              margin: 0 0 8px;
+            }
+
+            .alex-content p:last-child {
+              margin-bottom: 0;
+            }
+
+            .alex-content h3 {
+              margin: 8px 0;
+              color: #c4b5fd;
+              font-size: 14px;
+            }
+
+            .alex-content strong {
+              color: #f8fafc;
+            }
+
+            .alex-content em {
+              color: #cbd5e1;
+            }
+
+            .alex-content ul {
+              margin: 6px 0;
+              padding-left: 20px;
+            }
+
+            .alex-content li {
+              margin: 3px 0;
+            }
+
+            .alex-content code {
+              background: rgba(255,255,255,0.07);
+              border-radius: 4px;
+              padding: 1px 5px;
+              color: #a7f3d0;
+              font-family: "JetBrains Mono", monospace;
+              font-size: 0.92em;
+            }
+
+            .alex-content pre {
+              background: #080817;
+              border: 1px solid rgba(255,255,255,0.07);
+              border-radius: 8px;
+              padding: 10px;
+              overflow-x: auto;
+              margin: 8px 0;
+            }
+
+            .alex-content pre code {
+              background: transparent;
+              padding: 0;
+              color: #a7f3d0;
+              white-space: pre;
+            }
+
+            .alex-content a {
+              color: #93c5fd;
+            }
+
+            .alex-content::-webkit-scrollbar,
+            .alex-report::-webkit-scrollbar {
+              width: 6px;
+              height: 6px;
+            }
+
+            .alex-content::-webkit-scrollbar-track,
+            .alex-report::-webkit-scrollbar-track {
+              background: transparent;
+            }
+
+            .alex-content::-webkit-scrollbar-thumb,
+            .alex-report::-webkit-scrollbar-thumb {
+              background: rgba(139,92,246,0.3);
+              border-radius: 3px;
+            }
+
+            @keyframes alexBounce {
+              0%, 80%, 100% {
+                transform: scale(0);
+                opacity: 0.5;
               }
 
-              fileInputRef.current?.click();
-            }}
-            disabled={
-              uploading ||
-              loading
+              40% {
+                transform: scale(1);
+                opacity: 1;
+              }
             }
-            title="Upload file"
-            style={{
-              width:
-                "42px",
-              height:
-                "42px",
-              borderRadius:
-                "10px",
-              background:
-                "rgba(16,185,129,0.15)",
-              border:
-                "1px solid rgba(16,185,129,0.3)",
-              color:
-                "#34d399",
-              cursor:
-                uploading ||
-                loading
-                  ? "not-allowed"
-                  : "pointer",
-              fontSize:
-                "18px",
-              display:
-                "flex",
-              alignItems:
-                "center",
-              justifyContent:
-                "center",
-              flexShrink: 0,
-            }}
-          >
-            {uploading
-              ? "⏳"
-              : "📎"}
-          </button>
 
-          <textarea
-            ref={
-              inputRef
+            @media (max-width: 700px) {
+              .alex-content {
+                font-size: 13px !important;
+              }
             }
-            value={input}
-            onChange={(e) =>
-              setInput(
-                e.target.value
-              )
-            }
-            onKeyDown={
-              handleKeyDown
-            }
-            placeholder={
-              authenticated
-                ? "Tell ALEX what to do... (ya 📎 se file upload karo)"
-                : "Pehle login karo..."
-            }
-            rows={1}
-            disabled={
-              loading ||
-              !authenticated
-            }
-            style={{
-              flex: 1,
-              background:
-                "rgba(255,255,255,0.05)",
-              border:
-                "1px solid rgba(139,92,246,0.2)",
-              borderRadius:
-                "10px",
-              padding:
-                "10px 14px",
-              color:
-                "#e2e8f0",
-              fontSize:
-                "14px",
-              resize:
-                "none",
-              outline:
-                "none",
-              minHeight:
-                "42px",
-              fontFamily:
-                "inherit",
-              opacity:
-                authenticated
-                  ? 1
-                  : 0.6,
-            }}
-          />
-
-          <button
-            onClick={() =>
-              sendMessage()
-            }
-            disabled={
-              loading ||
-              !input.trim() ||
-              !authenticated
-            }
-            style={{
-              width:
-                "42px",
-              height:
-                "42px",
-              borderRadius:
-                "10px",
-              background:
-                loading ||
-                !authenticated ||
-                !input.trim()
-                  ? "rgba(139,92,246,0.3)"
-                  : "linear-gradient(135deg, #8b5cf6, #6d28d9)",
-              border:
-                "none",
-              color:
-                "#fff",
-              cursor:
-                loading ||
-                !authenticated ||
-                !input.trim()
-                  ? "not-allowed"
-                  : "pointer",
-              fontSize:
-                "18px",
-              display:
-                "flex",
-              alignItems:
-                "center",
-              justifyContent:
-                "center",
-              flexShrink: 0,
-            }}
-          >
-            {loading
-              ? "⏳"
-              : "➤"}
-          </button>
-        </div>
+          `}
+        </style>
       </div>
-
-      {/* =====================================================
-          STYLE
-          ===================================================== */}
-
-      <style>{`
-        .alex-content p {
-          margin: 0 0 8px 0;
-        }
-
-        .alex-content p:last-child {
-          margin-bottom: 0;
-        }
-
-        .alex-content ul {
-          margin: 6px 0;
-          padding-left: 20px;
-        }
-
-        .alex-content li {
-          margin-bottom: 4px;
-        }
-
-        .alex-content h3 {
-          margin: 10px 0 6px 0;
-          color: #c4b5fd;
-          font-size: 13px;
-        }
-
-        .alex-content code {
-          background: rgba(139,92,246,0.15);
-          padding: 2px 6px;
-          border-radius: 4px;
-          font-size: 13px;
-          font-family: 'JetBrains Mono', monospace;
-          color: #c4b5fd;
-        }
-
-        .alex-content pre {
-          background: #0a0a1a;
-          border: 1px solid rgba(139,92,246,0.15);
-          border-radius: 8px;
-          padding: 12px;
-          overflow-x: auto;
-          margin: 8px 0;
-        }
-
-        .alex-content pre code {
-          background: none;
-          padding: 0;
-          color: #e2e8f0;
-          font-size: 12px;
-        }
-
-        .alex-content strong {
-          color: #f1f5f9;
-        }
-
-        .alex-report ul {
-          padding-left: 16px;
-        }
-
-        textarea::placeholder {
-          color: #475569;
-        }
-
-        button {
-          -webkit-tap-highlight-color: transparent;
-        }
-
-        ::-webkit-scrollbar {
-          width: 6px;
-        }
-
-        ::-webkit-scrollbar-track {
-          background: transparent;
-        }
-
-        ::-webkit-scrollbar-thumb {
-          background: rgba(139,92,246,0.3);
-          border-radius: 3px;
-        }
-
-        @keyframes bounce {
-          0%, 80%, 100% {
-            transform: scale(0);
-          }
-
-          40% {
-            transform: scale(1);
-          }
-        }
-
-        @media (max-width: 600px) {
-          .alex-content {
-            font-size: 13px !important;
-          }
-        }
-      `}</style>
     </div>
   );
 };
