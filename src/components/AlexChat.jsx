@@ -1876,264 +1876,368 @@ const AlexChat = ({
   // SEND MESSAGE
   // ==========================================================
 
-  const sendMessage =
-    async (value) => {
-      const message =
-        typeof value === "string"
-          ? value.trim()
-          : input.trim();
+ const sendMessage =
+  async (value) => {
+    const message =
+      typeof value === "string"
+        ? value.trim()
+        : input.trim();
 
-      if (
-        !message ||
-        loading
-      ) {
-        return;
-      }
+    if (!message || loading) {
+      return;
+    }
 
-      if (
-        !hasAuthentication()
-      ) {
-        setError(
-          "Login required. Pehle login karo."
-        );
-        return;
-      }
-
-      const currentWindowsAgentToken =
-        ownerMode
-          ? localStorage.getItem(
-              WINDOWS_AGENT_TOKEN_STORAGE_KEY
-            ) ||
-            windowsAgentToken ||
-            ""
-          : "";
-
-      setInput("");
-      setLoading(true);
-      setError(null);
-
-      const userMessage = {
-        role: "user",
-        type: "message",
-        content: message,
-        timestamp:
-          new Date().toISOString(),
-      };
-
-      const typingMessage = {
-        role: "alex",
-        type: "typing",
-        content: "...",
-        timestamp:
-          new Date().toISOString(),
-      };
-
-      setMessages(
-        (prev) => [
-          ...prev,
-          userMessage,
-          typingMessage,
-        ]
+    if (!hasAuthentication()) {
+      setError(
+        "Login required. Pehle login karo."
       );
+      return;
+    }
 
-      try {
-        const response =
-          await axios.post(
-            `${API_BASE}/api/alex/chat`,
-            {
-              message,
-              sessionId,
-              ...(ownerMode &&
-              currentWindowsAgentToken
-                ? {
-                    windowsAgentToken:
-                      currentWindowsAgentToken,
-                  }
-                : {}),
-            },
-            {
-              headers:
-                getAuthHeaders(),
-              timeout:
-                120000,
-            }
-          );
+    const currentWindowsAgentToken =
+      ownerMode
+        ? localStorage.getItem(
+            WINDOWS_AGENT_TOKEN_STORAGE_KEY
+          ) ||
+          windowsAgentToken ||
+          ""
+        : "";
 
-        const data =
-          response.data;
+    setInput("");
+    setLoading(true);
+    setError(null);
 
-        setMessages(
-          (prev) =>
-            prev.filter(
-              (item) =>
-                item.type !==
-                "typing"
-            )
-        );
-
-        if (data?.sessionId) {
-          persistSessionId(
-            data.sessionId
-          );
-        }
-
-        if (data?.metrics) {
-          setMetrics(
-            data.metrics
-          );
-        }
-
-        if (data?.success) {
-          setMessages(
-            (prev) => [
-              ...prev,
-              {
-                role: "alex",
-                type: "result",
-                content:
-                  data.response ||
-                  data.message ||
-                  "ALEX completed the request.",
-                result:
-                  data.result,
-                report:
-                  data.report,
-                timestamp:
-                  new Date().toISOString(),
-              },
-            ]
-          );
-        } else {
-          setMessages(
-            (prev) => [
-              ...prev,
-              {
-                role: "alex",
-                type: "error",
-                content:
-                  data?.response ||
-                  data?.message ||
-                  data?.error ||
-                  "ALEX request failed.",
-                result:
-                  data?.result,
-                timestamp:
-                  new Date().toISOString(),
-              },
-            ]
-          );
-        }
-      } catch (err) {
-        setMessages(
-          (prev) =>
-            prev.filter(
-              (item) =>
-                item.type !==
-                "typing"
-            )
-        );
-
-        const status =
-          err?.response
-            ?.status;
-
-        const serverMessage =
-          err?.response
-            ?.data
-            ?.message ||
-          "";
-
-        const serverError =
-          err?.response
-            ?.data
-            ?.error ||
-          "";
-
-        const serverResponse =
-          err?.response
-            ?.data
-            ?.response ||
-          "";
-
-        if (
-          status === 401
-        ) {
-          try {
-            localStorage.removeItem(
-              "token"
-            );
-
-            sessionStorage.removeItem(
-              "token"
-            );
-          } catch {}
-
-          setMessages(
-            (prev) => [
-              ...prev,
-              {
-                role: "alex",
-                type: "error",
-                content:
-                  `❌ **Authentication failed (401)**\n\n${
-                    serverMessage ||
-                    serverError ||
-                    "Login session invalid ya expired hai."
-                  }\n\nPlease dobara login karo.`,
-                timestamp:
-                  new Date().toISOString(),
-              },
-            ]
-          );
-        } else if (
-          status === 403
-        ) {
-          // IMPORTANT:
-          // Do NOT delete JWT on 403.
-          // 403 can mean permission/role denial.
-          setMessages(
-            (prev) => [
-              ...prev,
-              {
-                role: "alex",
-                type: "error",
-                content:
-                  `❌ **Access denied (403)**\n\n${
-                    serverMessage ||
-                    serverError ||
-                    "Aapke account ko is action ki permission nahi hai."
-                  }`,
-                timestamp:
-                  new Date().toISOString(),
-              },
-            ]
-          );
-        } else {
-          setMessages(
-            (prev) => [
-              ...prev,
-              {
-                role: "alex",
-                type: "error",
-                content:
-                  `❌ **Error:** ${
-                    serverResponse ||
-                    serverMessage ||
-                    serverError ||
-                    err?.message ||
-                    "Unknown error"
-                  }`,
-                timestamp:
-                  new Date().toISOString(),
-              },
-            ]
-          );
-        }
-      } finally {
-        setLoading(false);
-      }
+    const userMessage = {
+      role: "user",
+      type: "message",
+      content: message,
+      timestamp: new Date().toISOString(),
     };
 
+    const typingMessage = {
+      role: "alex",
+      type: "typing",
+      content: "...",
+      timestamp: new Date().toISOString(),
+    };
+
+    setMessages((prev) => [
+      ...prev,
+      userMessage,
+      typingMessage,
+    ]);
+
+    let activeSessionId = sessionId;
+    let response = null;
+
+    const sendChatRequest =
+      async (currentSessionId) => {
+        return await axios.post(
+          `${API_BASE}/api/alex/chat`,
+          {
+            message,
+            sessionId:
+              currentSessionId || null,
+            ...(ownerMode &&
+            currentWindowsAgentToken
+              ? {
+                  windowsAgentToken:
+                    currentWindowsAgentToken,
+                }
+              : {}),
+          },
+          {
+            headers:
+              getAuthHeaders(),
+            timeout: 120000,
+          }
+        );
+      };
+
+    try {
+      /*
+       * --------------------------------------------------
+       * FIRST REQUEST
+       * --------------------------------------------------
+       */
+      try {
+        response =
+          await sendChatRequest(
+            activeSessionId
+          );
+      } catch (firstError) {
+        const firstStatus =
+          firstError?.response?.status;
+
+        const firstServerError =
+          firstError?.response?.data
+            ?.error || "";
+
+        const firstServerMessage =
+          firstError?.response?.data
+            ?.message || "";
+
+        const errorText =
+          String(
+            firstServerError ||
+              firstServerMessage ||
+              ""
+          )
+            .trim()
+            .toLowerCase();
+
+        const isStaleSession =
+          firstStatus === 403 &&
+          (
+            errorText ===
+              "access denied" ||
+            errorText ===
+              "access denied."
+          );
+
+        /*
+         * ------------------------------------------------
+         * STALE SESSION
+         * ------------------------------------------------
+         */
+        if (isStaleSession) {
+          console.warn(
+            "⚠️ ALEX: stale session detected. Creating fresh session..."
+          );
+
+          const freshSessionId =
+            `alex_chat_${Date.now()}_${Math.random()
+              .toString(36)
+              .slice(2, 10)}`;
+
+          activeSessionId =
+            freshSessionId;
+
+          persistSessionId(
+            freshSessionId
+          );
+
+          /*
+           * Retry exactly once with
+           * the fresh session.
+           */
+          response =
+            await sendChatRequest(
+              freshSessionId
+            );
+        } else {
+          throw firstError;
+        }
+      }
+
+      /*
+       * --------------------------------------------------
+       * RESPONSE
+       * --------------------------------------------------
+       */
+
+      const data =
+        response?.data;
+
+      /*
+       * Remove typing indicator.
+       */
+      setMessages(
+        (prev) =>
+          prev.filter(
+            (item) =>
+              item.type !== "typing"
+          )
+      );
+
+      /*
+       * Save session returned by backend.
+       */
+      if (data?.sessionId) {
+        persistSessionId(
+          data.sessionId
+        );
+      }
+
+      /*
+       * Update metrics.
+       */
+      if (data?.metrics) {
+        setMetrics(
+          data.metrics
+        );
+      }
+
+      /*
+       * --------------------------------------------------
+       * SUCCESS
+       * --------------------------------------------------
+       */
+      if (data?.success) {
+        setMessages(
+          (prev) => [
+            ...prev,
+            {
+              role: "alex",
+              type: "result",
+              content:
+                data.response ||
+                data.message ||
+                "ALEX completed the request.",
+              result:
+                data.result,
+              report:
+                data.report,
+              timestamp:
+                new Date().toISOString(),
+            },
+          ]
+        );
+      }
+
+      /*
+       * --------------------------------------------------
+       * BACKEND RETURNED success:false
+       * --------------------------------------------------
+       */
+      else {
+        setMessages(
+          (prev) => [
+            ...prev,
+            {
+              role: "alex",
+              type: "error",
+              content:
+                data?.response ||
+                data?.message ||
+                data?.error ||
+                "ALEX request failed.",
+              result:
+                data?.result,
+              timestamp:
+                new Date().toISOString(),
+            },
+          ]
+        );
+      }
+    } catch (err) {
+      /*
+       * Remove typing indicator.
+       */
+      setMessages(
+        (prev) =>
+          prev.filter(
+            (item) =>
+              item.type !== "typing"
+          )
+      );
+
+      const status =
+        err?.response?.status;
+
+      const serverMessage =
+        err?.response?.data?.message ||
+        "";
+
+      const serverError =
+        err?.response?.data?.error ||
+        "";
+
+      const serverResponse =
+        err?.response?.data?.response ||
+        "";
+
+      /*
+       * --------------------------------------------------
+       * 401 AUTHENTICATION
+       * --------------------------------------------------
+       */
+      if (status === 401) {
+        try {
+          localStorage.removeItem(
+            "token"
+          );
+
+          sessionStorage.removeItem(
+            "token"
+          );
+        } catch {}
+
+        setMessages(
+          (prev) => [
+            ...prev,
+            {
+              role: "alex",
+              type: "error",
+              content:
+                `❌ **Authentication failed (401)**\n\n${
+                  serverMessage ||
+                  serverError ||
+                  "Login session invalid ya expired hai."
+                }\n\nPlease dobara login karo.`,
+              timestamp:
+                new Date().toISOString(),
+            },
+          ]
+        );
+      }
+
+      /*
+       * --------------------------------------------------
+       * 403 PERMISSION
+       * --------------------------------------------------
+       */
+      else if (status === 403) {
+        setMessages(
+          (prev) => [
+            ...prev,
+            {
+              role: "alex",
+              type: "error",
+              content:
+                `❌ **Access denied (403)**\n\n${
+                  serverResponse ||
+                  serverMessage ||
+                  serverError ||
+                  "Is action ke liye permission required hai."
+                }`,
+              timestamp:
+                new Date().toISOString(),
+            },
+          ]
+        );
+      }
+
+      /*
+       * --------------------------------------------------
+       * OTHER ERROR
+       * --------------------------------------------------
+       */
+      else {
+        setMessages(
+          (prev) => [
+            ...prev,
+            {
+              role: "alex",
+              type: "error",
+              content:
+                `❌ **Error:** ${
+                  serverResponse ||
+                  serverMessage ||
+                  serverError ||
+                  err?.message ||
+                  "Unknown error"
+                }`,
+              timestamp:
+                new Date().toISOString(),
+            },
+          ]
+        );
+      }
+    } finally {
+      setLoading(false);
+    }
+  
   // ==========================================================
   // ENTER
   // ==========================================================
