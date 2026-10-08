@@ -3157,13 +3157,13 @@ const AlexChat = ({
                         />
                       )}
 
-                      {message.result && (
-                        <ResultCard
-                          result={
-                            message.result
-                          }
-                        />
-                      )}
+                      {message.result && ownerMode && (
+  <ResultCard
+    result={
+      message.result
+    }
+  />
+)}
 
                       {message.report && (
                         <ReportPanel
