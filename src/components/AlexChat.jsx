@@ -2167,25 +2167,109 @@ const AlexChat = ({
         // ======================================================
 
         if (data?.success) {
-          setMessages(
-            (prev) => [
-              ...prev,
-              {
-                role: "alex",
-                type: "result",
-                content:
-                  data.response ||
-                  data.message ||
-                  "ALEX completed the request.",
-                result:
-                  data.result,
-                report:
-                  data.report,
-                timestamp:
-                  new Date().toISOString(),
-              },
-            ]
-          );
+          const parseWeatherPayload = (value) => {
+            if (value && typeof value === "object") {
+              if (value.type === "live_weather") {
+                return value;
+              }
+
+              if (value.result) {
+                return parseWeatherPayload(value.result);
+              }
+
+              return null;
+            }
+
+            if (typeof value === "string") {
+              const cleaned = value
+                .trim()
+                .replace(/^```(?:json)?\s*/i, "")
+                .replace(/\s*```$/, "");
+
+              try {
+                return parseWeatherPayload(JSON.parse(cleaned));
+              } catch {
+                return null;
+              }
+            }
+
+            return null;
+          };
+
+          const weatherEnvelope =
+            parseWeatherPayload(data?.result) ||
+            parseWeatherPayload(data?.response) ||
+            parseWeatherPayload(data?.message);
+
+          const weather =
+            weatherEnvelope?.type === "live_weather"
+              ? weatherEnvelope.data
+              : null;
+
+          let responseContent =
+            data?.response || data?.message;
+
+          if (weather?.current) {
+            const location =
+              weather.location?.name || "Unknown location";
+
+            const region =
+              weather.location?.region || "";
+
+            const current = weather.current;
+
+            const degrees = Number(current.windDirection);
+
+            const directions = [
+              "North",
+              "North-East",
+              "East",
+              "South-East",
+              "South",
+              "South-West",
+              "West",
+              "North-West",
+            ];
+
+            const windDirection = Number.isFinite(degrees)
+              ? directions[Math.round(degrees / 45) % 8]
+              : "";
+
+            responseContent = [
+              `🌤️ ${location}${region ? `, ${region}` : ""} ka live weather`,
+              "",
+              `🌡️ Temperature: ${current.temperatureC}°C`,
+              `🤗 Feels like: ${current.feelsLikeC}°C`,
+              `💧 Humidity: ${current.humidity}%`,
+              `💨 Wind speed: ${current.windSpeedKmh} km/h${windDirection ? ` (${windDirection})` : ""}`,
+              `🌧️ Rain: ${current.rainMm ?? 0} mm`,
+              "",
+              `🕒 Weather data time: ${current.time || "Not available"} (${current.timezone || "local time"})`,
+              "",
+              "Source: Open-Meteo",
+            ].join("\n");
+          } else if (
+            typeof responseContent !== "string" ||
+            responseContent.trim().startsWith("{")
+          ) {
+            responseContent =
+              typeof data?.result === "string"
+                ? data.result
+                : "ALEX completed the request.";
+          }
+
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "alex",
+              type: "result",
+              content:
+                responseContent || "ALEX completed the request.",
+              result: data.result,
+              report: data.report,
+              timestamp: new Date().toISOString(),
+            },
+          ]);
         }
 
         // ======================================================
