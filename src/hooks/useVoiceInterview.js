@@ -153,18 +153,29 @@ export default function useVoiceInterview() {
           return;
         }
 
-        const speaking = Boolean(
-          speechSynth.isSpeakingRef?.current
-        );
+        
+const speaking = Boolean(
+  speechSynth.isSpeakingRef?.current
+);
 
-        // Allow the speech engine time to start.
-        if (speaking || Date.now() - startedAt < 500) {
-          speechPollTimerRef.current = setTimeout(
-            waitForSpeech,
-            250
-          );
-          return;
-        }
+// Give speech synthesis time to start, but never wait
+// indefinitely if the browser doesn't update isSpeakingRef.
+if (Date.now() - startedAt < 1500) {
+  speechPollTimerRef.current = setTimeout(
+    waitForSpeech,
+    250
+  );
+  return;
+}
+
+if (speaking) {
+  speechPollTimerRef.current = setTimeout(
+    waitForSpeech,
+    250
+  );
+  return;
+}
+
 
         if (typeof onFinished === 'function') {
           onFinished();
