@@ -707,6 +707,7 @@ export default function useVoiceInterview() {
     }
   }, []);
 
+
   // Cleanup when the component unmounts.
   useEffect(() => {
     mountedRef.current = true;
@@ -730,7 +731,12 @@ export default function useVoiceInterview() {
         // Ignore cleanup errors.
       }
     };
-  }, [clearTimers, speechRec, speechSynth]);
+  }, [
+    clearTimers,
+    speechRec.stopListening,
+    speechSynth.stop,
+  ]);
+
 
   return {
     sessionId,
