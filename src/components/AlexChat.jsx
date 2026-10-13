@@ -163,6 +163,7 @@ const escapeHtml = (value) => {
 
 const renderContent = (content) => {
   if (!content) return "";
+  content = String(content).replace(/\\(?=\r?\n|$)/g, "");
 
   let html = escapeHtml(content);
 
@@ -2167,96 +2168,285 @@ const AlexChat = ({
         // ======================================================
 
         if (data?.success) {
-          const parseWeatherPayload = (value) => {
-            if (value && typeof value === "object") {
-              if (value.type === "live_weather") {
-                return value;
-              }
+         
+const parseWeatherPayload = (value) => {
+  if (value && typeof value === "object") {
+    if (
+      value.type === "live_weather" ||
+      value.type === "weather_forecast" ||
+      value.type === "weather_history"
+    ) {
+      return value;
+    }
 
-              if (value.result) {
-                return parseWeatherPayload(value.result);
-              }
+    if (value.data && typeof value.data === "object") {
+      if (
+        value.data.type === "live_weather" ||
+        value.data.type === "weather_forecast" ||
+        value.data.type === "weather_history"
+      ) {
+        return value.data;
+      }
+    }
 
-              return null;
-            }
+    if (value.result) {
+      const nested = parseWeatherPayload(value.result);
+      if (nested) return nested;
+    }
 
-            if (typeof value === "string") {
-              const cleaned = value
-                .trim()
-                .replace(/^```(?:json)?\s*/i, "")
-                .replace(/\s*```$/, "");
+    return null;
+  }
 
-              try {
-                return parseWeatherPayload(JSON.parse(cleaned));
-              } catch {
-                return null;
-              }
-            }
+  if (typeof value === "string") {
+    const cleaned = value
+      .trim()
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/, "");
 
-            return null;
-          };
+    try {
+      return parseWeatherPayload(JSON.parse(cleaned));
+    } catch {
+      return null;
+    }
+  }
 
-          const weatherEnvelope =
-            parseWeatherPayload(data?.result) ||
-            parseWeatherPayload(data?.response) ||
-            parseWeatherPayload(data?.message);
+  return null;
+};
 
-          const weather =
-            weatherEnvelope?.type === "live_weather"
-              ? weatherEnvelope.data
-              : null;
+const weatherEnvelope =
+  parseWeatherPayload(data?.result) ||
+  parseWeatherPayload(data?.response) ||
+  parseWeatherPayload(data?.message);
 
-          let responseContent =
-            data?.response || data?.message;
+const weather =
+  weatherEnvelope?.data &&
+  typeof weatherEnvelope.data === "object"
+    ? weatherEnvelope.data
+    : weatherEnvelope;
 
-          if (weather?.current) {
-            const location =
-              weather.location?.name || "Unknown location";
 
-            const region =
-              weather.location?.region || "";
+let responseContent =
+  typeof data?.response === "string"
+    ? data.response
+    : typeof data?.message === "string"
+    ? data.message
+    : typeof data?.result === "string"
+    ? data.result
+    : "";
 
-            const current = weather.current;
+if (weather?.daily?.time?.length) {
+  const location =
+    weather.location?.name || "Unknown location";
 
-            const degrees = Number(current.windDirection);
+  const region =
+    weather.location?.region || "";
 
-            const directions = [
-              "North",
-              "North-East",
-              "East",
-              "South-East",
-              "South",
-              "South-West",
-              "West",
-              "North-West",
-            ];
+  const timezone =
+    weather.timezone || "local time";
 
-            const windDirection = Number.isFinite(degrees)
-              ? directions[Math.round(degrees / 45) % 8]
-              : "";
+  const requestedText = String(message || "").toLowerCase();
 
-            responseContent = [
-              `🌤️ ${location}${region ? `, ${region}` : ""} ka live weather`,
-              "",
-              `🌡️ Temperature: ${current.temperatureC}°C`,
-              `🤗 Feels like: ${current.feelsLikeC}°C`,
-              `💧 Humidity: ${current.humidity}%`,
-              `💨 Wind speed: ${current.windSpeedKmh} km/h${windDirection ? ` (${windDirection})` : ""}`,
-              `🌧️ Rain: ${current.rainMm ?? 0} mm`,
-              "",
-              `🕒 Weather data time: ${current.time || "Not available"} (${current.timezone || "local time"})`,
-              "",
-              "Source: Open-Meteo",
-            ].join("\n");
-          } else if (
-            typeof responseContent !== "string" ||
-            responseContent.trim().startsWith("{")
-          ) {
-            responseContent =
-              typeof data?.result === "string"
-                ? data.result
-                : "ALEX completed the request.";
-          }
+  let dayIndex = 0;
+
+  if (
+    requestedText.includes("tomorrow") ||
+    requestedText.includes("kal") ||
+    requestedText.includes("next day")
+  ) {
+    const tomorrowIndex = weather.daily.time.findIndex(
+      (date) => {
+        const today = new Date().toLocaleDateString(
+          "en-CA",
+          { timeZone: timezone }
+        );
+
+        return date > today;
+      }
+    );
+
+    if (tomorrowIndex >= 0) {
+      dayIndex = tomorrowIndex;
+    } else if (weather.daily.time.length > 1) {
+      dayIndex = 1;
+    }
+  }
+
+  const date =
+    weather.daily.time[dayIndex] || "Date unavailable";
+
+  const maxTemp =
+    weather.daily.temperature_2m_max?.[dayIndex];
+
+  const minTemp =
+    weather.daily.temperature_2m_min?.[dayIndex];
+
+  const rainChance =
+    weather.daily.precipitation_probability_max?.[dayIndex];
+
+  const rainMm =
+    weather.daily.precipitation_sum?.[dayIndex];
+
+  const wind =
+    weather.daily.wind_speed_10m_max?.[dayIndex];
+
+  const code =
+    weather.daily.weather_code?.[dayIndex];
+
+  const sunrise =
+    weather.daily.sunrise?.[dayIndex];
+
+  const sunset =
+    weather.daily.sunset?.[dayIndex];
+
+  const weatherDescription = (weatherCode) => {
+    const descriptions = {
+      0: "Saaf aasman",
+      1: "Aksar saaf aasman",
+      2: "Aanshik badal",
+      3: "Badal chhaye rahenge",
+      45: "Kohra",
+      48: "Kohra aur jamav",
+      51: "Halki boondabandi",
+      53: "Boondabandi",
+      55: "Tez boondabandi",
+      61: "Halki baarish",
+      63: "Baarish",
+      65: "Tez baarish",
+      71: "Halki barfbaari",
+      73: "Barfbaari",
+      75: "Tez barfbaari",
+      80: "Halki chhitein",
+      81: "Baarish ke chhitein",
+      82: "Tez baarish ke chhitein",
+      95: "Garaj-chamak ke saath aandhi-baarish",
+      96: "Olon ke saath garaj-chamak",
+      99: "Tez olon ke saath garaj-chamak",
+    };
+
+    return descriptions[weatherCode] || "Mausam ki sthiti uplabdh hai";
+  };
+
+  const formatTime = (value) => {
+    if (!value) return "Uplabdh nahi";
+
+    const parsed = new Date(value);
+
+    if (Number.isNaN(parsed.getTime())) {
+      return value;
+    }
+
+    return parsed.toLocaleTimeString("en-IN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: timezone,
+    });
+  };
+
+  
+  responseContent = [
+    `🌦️ **${location}${region ? `, ${region}` : ""} ka weather forecast**`,
+    "",
+    `📅 **Date:** ${date}`,
+    `🌤️ **Mausam:** ${weatherDescription(code)}`,
+    `🌡️ **Maximum temperature:** ${Number.isFinite(Number(maxTemp)) ? `${maxTemp}°C` : "Uplabdh nahi"}`,
+    `🥶 **Minimum temperature:** ${Number.isFinite(Number(minTemp)) ? `${minTemp}°C` : "Uplabdh nahi"}`,
+    `🌧️ **Baarish ki sambhavna:** ${rainChance != null ? `${rainChance}%` : "Uplabdh nahi"}`,
+    `💧 **Expected rainfall:** ${rainMm != null ? `${rainMm} mm` : "Uplabdh nahi"}`,
+    `💨 **Maximum wind speed:** ${wind != null ? `${wind} km/h` : "Uplabdh nahi"}`,
+    `🌅 **Sunrise:** ${formatTime(sunrise)}`,
+    `🌇 **Sunset:** ${formatTime(sunset)}`,
+    "",
+    "Source: Open-Meteo",
+  ].join("\n");
+
+} else if (weather?.current) {
+  const location =
+    weather.location?.name || "Unknown location";
+
+  const region =
+    weather.location?.region || "";
+
+  const current = weather.current;
+
+  const degrees = Number(current.windDirection);
+
+  const directions = [
+    "North",
+    "North-East",
+    "East",
+    "South-East",
+    "South",
+    "South-West",
+    "West",
+    "North-West",
+  ];
+
+  const windDirection = Number.isFinite(degrees)
+    ? directions[Math.round(degrees / 45) % 8]
+    : "";
+
+  responseContent = [
+    `🌤️ **${location}${region ? `, ${region}` : ""} ka live weather**`,
+    "",
+    `🌡️ **Temperature:** ${current.temperatureC}°C`,
+    `🤗 **Feels like:** ${current.feelsLikeC}°C`,
+    `💧 **Humidity:** ${current.humidity}%`,
+    `💨 **Wind speed:** ${current.windSpeedKmh} km/h${windDirection ? ` (${windDirection})` : ""}`,
+    `🌧️ **Rain:** ${current.rainMm ?? 0} mm`,
+    "",
+    `🕒 **Weather data time:** ${current.time || "Not available"} (${current.timezone || weather.timezone || "local time"})`,
+    "",
+    "Source: Open-Meteo",
+  ].join("\n");
+
+} else if (
+  typeof responseContent !== "string" ||
+  responseContent.trim().startsWith("{")
+) {
+  const candidates = [
+    data?.result,
+    data?.response,
+    data?.message,
+    data?.report,
+    data?.data,
+  ];
+
+  let fallback = "";
+
+  for (const item of candidates) {
+    if (typeof item === "string" && item.trim()) {
+      fallback = item.trim();
+
+      try {
+        const parsed = JSON.parse(fallback);
+
+        if (parsed && typeof parsed === "object") {
+          fallback = JSON.stringify(parsed, null, 2);
+        }
+      } catch {
+        // Normal text hai; use as-is.
+      }
+
+      break;
+    }
+
+    if (item && typeof item === "object") {
+      try {
+        fallback = JSON.stringify(item, null, 2);
+      } catch {
+        fallback = "";
+      }
+
+      if (fallback) break;
+    }
+  }
+
+  responseContent =
+    fallback ||
+    "ALEX request complete hua, lekin response mein readable content nahi mila.";
+}
+
 
           setMessages((prev) => [
             ...prev,
