@@ -182,6 +182,7 @@ export default function useSpeechSynthesis() {
 
   const stop = useCallback(() => {
     console.log('[TTS] STOP requested');
+    console.trace('[TTS DEBUG] Actual stop() caller');
     cancelledRef.current = true;
     stopKeepAlive();
     if (speakTimeoutRef.current) {
