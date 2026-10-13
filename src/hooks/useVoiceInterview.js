@@ -128,6 +128,7 @@ export default function useVoiceInterview() {
   );
 
   // Let ALEX finish speaking before starting the microphone.
+  
   const speakThenListen = useCallback(
     (message, version, expectedSessionId, onFinished) => {
       clearTimers();
@@ -136,51 +137,73 @@ export default function useVoiceInterview() {
         return;
       }
 
-      if (message) {
-        try {
-          speechSynth.speak(message);
-        } catch (err) {
-          console.error('[VOICE] Speech synthesis failed:', err);
-        }
-      }
-
+      let finished = false;
       const startedAt = Date.now();
 
-      const waitForSpeech = () => {
-        speechPollTimerRef.current = null;
+      const finishOnce = () => {
+        if (finished) return;
+        finished = true;
 
-        if (!isCurrentInterview(version, expectedSessionId)) {
-          return;
+        if (speechPollTimerRef.current) {
+          clearTimeout(speechPollTimerRef.current);
+          speechPollTimerRef.current = null;
         }
-
-        
-const speaking = Boolean(
-  speechSynth.isSpeakingRef?.current
-);
-
-// Give speech synthesis time to start, but never wait
-// indefinitely if the browser doesn't update isSpeakingRef.
-if (Date.now() - startedAt < 1500) {
-  speechPollTimerRef.current = setTimeout(
-    waitForSpeech,
-    250
-  );
-  return;
-}
-
-if (speaking) {
-  speechPollTimerRef.current = setTimeout(
-    waitForSpeech,
-    250
-  );
-  return;
-}
-
 
         if (typeof onFinished === 'function') {
           onFinished();
         }
       };
+
+      const waitForSpeech = () => {
+        speechPollTimerRef.current = null;
+
+        if (finished) return;
+
+        if (!isCurrentInterview(version, expectedSessionId)) {
+          return;
+        }
+
+        const speaking = Boolean(
+          speechSynth.isSpeakingRef?.current
+        );
+
+        // Wait for speech to start and finish.
+        // Do not start the microphone while speech is active.
+        if (speaking) {
+          speechPollTimerRef.current = setTimeout(
+            waitForSpeech,
+            250
+          );
+          return;
+        }
+
+        // Allow the browser time to begin playback.
+        if (Date.now() - startedAt < 3000) {
+          speechPollTimerRef.current = setTimeout(
+            waitForSpeech,
+            250
+          );
+          return;
+        }
+
+        finishOnce();
+      };
+
+      if (!message?.trim()) {
+        finishOnce();
+        return;
+      }
+
+      console.log('[VOICE DEBUG] Greeting/response:', message);
+      console.log('[VOICE DEBUG] Calling speechSynth.speak()');
+
+      try {
+        speechSynth.speak(message);
+      } catch (err) {
+        console.error('[VOICE] Speech synthesis failed:', err);
+        finishOnce();
+        return;
+      }
 
       speechPollTimerRef.current = setTimeout(
         waitForSpeech,
@@ -189,6 +212,7 @@ if (speaking) {
     },
     [clearTimers, isCurrentInterview, speechSynth]
   );
+
 
   const restartListening = useCallback(
     (version, expectedSessionId) => {
