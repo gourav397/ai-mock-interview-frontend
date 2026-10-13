@@ -17,6 +17,7 @@ export default function AIInterview() {
     feedback,
     isProcessing,
     lastAiMessage,
+    lastUserMessage,
     emotion,
     jobRole,
     setJobRole,
@@ -41,7 +42,9 @@ export default function AIInterview() {
   const [aiEmotion, setAiEmotion] = useState('neutral');
 
   const messageEndRef = useRef(null);
-  const processedMessageHashes = useRef(new Set());
+  const processedAiMessagesRef = useRef(new Set());
+  const processedUserMessagesRef = useRef(new Set());
+  const lastUserMessageRef = useRef('');
 
   const experienceLevels = [
     'Fresher',
@@ -51,7 +54,28 @@ export default function AIInterview() {
     'Lead (10+ yrs)',
   ];
 
-  // Send a typed answer to the AI interviewer.
+  const addUserMessage = useCallback((text) => {
+    const content = (text || '').trim();
+
+    if (!content) return;
+
+    // Avoid adding the same answer twice.
+    if (processedUserMessagesRef.current.has(content)) {
+      return;
+    }
+
+    processedUserMessagesRef.current.add(content);
+
+    setMessages((previous) => [
+      ...previous,
+      {
+        role: 'user',
+        content,
+      },
+    ]);
+  }, []);
+
+  // Send a typed answer.
   const sendTypedMessage = async (event) => {
     event.preventDefault();
 
@@ -66,13 +90,9 @@ export default function AIInterview() {
       return;
     }
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: 'user',
-        content: text,
-      },
-    ]);
+    // Add the message here; the hook may publish it too.
+    addUserMessage(text);
+    lastUserMessageRef.current = text;
 
     setTypedMessage('');
     setIsSendingTyped(true);
@@ -84,47 +104,78 @@ export default function AIInterview() {
 
       await processUserSpeech(text);
     } catch (err) {
-      console.error('Typed message failed:', err);
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'ai',
-          content:
-            'Sorry, your message could not be processed. Please try again.',
-        },
-      ]);
+      console.error('[AIInterview] Typed answer failed:', err);
     } finally {
       setIsSendingTyped(false);
     }
   };
 
-  // Track AI messages and prevent duplicates.
+  // Add each new AI response to the chat once.
   useEffect(() => {
     if (
-      lastAiMessage &&
-      (interviewState === 'active' || interviewState === 'feedback')
+      !lastAiMessage ||
+      (interviewState !== 'active' &&
+        interviewState !== 'feedback')
     ) {
-      const hash = lastAiMessage.slice(0, 100);
-
-      if (!processedMessageHashes.current.has(hash)) {
-        processedMessageHashes.current.add(hash);
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'ai',
-            content: lastAiMessage,
-          },
-        ]);
-      }
+      return;
     }
+
+    const content = lastAiMessage.trim();
+
+    if (!content || processedAiMessagesRef.current.has(content)) {
+      return;
+    }
+
+    processedAiMessagesRef.current.add(content);
+
+    setMessages((previous) => [
+      ...previous,
+      {
+        role: 'ai',
+        content,
+      },
+    ]);
   }, [lastAiMessage, interviewState]);
 
-  // Update the avatar according to the interview state.
+  // Add microphone-recognized or hook-published user answers.
+  useEffect(() => {
+    if (
+      !lastUserMessage ||
+      interviewState !== 'active'
+    ) {
+      return;
+    }
+
+    const content = lastUserMessage.trim();
+
+    if (!content) return;
+
+    // The typed-message handler already displayed this answer.
+    // Don't add it again when the hook publishes the same text.
+    if (content === lastUserMessageRef.current) {
+      lastUserMessageRef.current = '';
+      return;
+    }
+
+    addUserMessage(content);
+  }, [lastUserMessage, interviewState, addUserMessage]);
+
+  // Show the current speech-recognition transcript while speaking.
+  useEffect(() => {
+    if (interviewState !== 'active') return;
+
+    const transcript = (speechRec.transcript || '').trim();
+
+    if (!transcript) return;
+
+    // Keep the live transcript visible without sending it early.
+    // The completed answer is added by lastUserMessage after submission.
+  }, [speechRec.transcript, interviewState]);
+
+  // Update the avatar according to interview state.
   useEffect(() => {
     const interval = setInterval(() => {
-      if (speechSynth.isSpeakingRef.current) {
+      if (speechSynth.isSpeakingRef?.current) {
         setAiState('speaking');
         setAiEmotion('happy');
       } else if (isProcessing) {
@@ -156,12 +207,31 @@ export default function AIInterview() {
     interviewState,
   ]);
 
-  // Scroll the chat to the latest message.
+  // Scroll chat to the newest message or live transcript.
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({
       behavior: 'smooth',
+      block: 'end',
     });
-  }, [messages]);
+  }, [messages, speechRec.transcript]);
+
+  const clearChat = () => {
+    setMessages([]);
+    setTypedMessage('');
+    setIsSendingTyped(false);
+    processedAiMessagesRef.current.clear();
+    processedUserMessagesRef.current.clear();
+    lastUserMessageRef.current = '';
+  };
+
+  const handleStartInterview = () => {
+    clearChat();
+    startInterview({
+      jobRole,
+      experience,
+      techStack,
+    });
+  };
 
   // Interview setup screen.
   if (interviewState === 'idle') {
@@ -171,13 +241,9 @@ export default function AIInterview() {
           <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
             <Link to="/dashboard" className="flex items-center gap-2">
               <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-blue-500 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-xs">
-                  AI
-                </span>
+                <span className="text-white font-bold text-xs">AI</span>
               </div>
-              <span className="text-white font-bold">
-                Interview
-              </span>
+              <span className="text-white font-bold">Interview</span>
             </Link>
 
             <button
@@ -192,10 +258,7 @@ export default function AIInterview() {
         <div className="max-w-4xl mx-auto px-4 py-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div className="flex flex-col items-center justify-center bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10">
-              <AIAvatar
-                state="idle"
-                emotion="neutral"
-              />
+              <AIAvatar state="idle" emotion="neutral" />
 
               <h2 className="text-white text-xl font-bold mt-6">
                 AI Interview
@@ -310,23 +373,11 @@ export default function AIInterview() {
           isOpen={showPermissions}
           onAllow={() => {
             setShowPermissions(false);
-            setMessages([]);
-            processedMessageHashes.current.clear();
-            startInterview({
-              jobRole,
-              experience,
-              techStack,
-            });
+            handleStartInterview();
           }}
           onDeny={() => {
             setShowPermissions(false);
-            setMessages([]);
-            processedMessageHashes.current.clear();
-            startInterview({
-              jobRole,
-              experience,
-              techStack,
-            });
+            handleStartInterview();
           }}
           cameraAllowed={false}
           micAllowed={false}
@@ -342,13 +393,9 @@ export default function AIInterview() {
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <Link to="/dashboard" className="flex items-center gap-2">
             <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-blue-500 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-xs">
-                AI
-              </span>
+              <span className="text-white font-bold text-xs">AI</span>
             </div>
-            <span className="text-white font-bold">
-              Voice Interview
-            </span>
+            <span className="text-white font-bold">Voice Interview</span>
           </Link>
 
           <div className="flex items-center gap-4 text-sm">
@@ -368,9 +415,7 @@ export default function AIInterview() {
               {difficulty}
             </span>
 
-            <span className="text-white/50">
-              Q: {questionNumber}
-            </span>
+            <span className="text-white/50">Q: {questionNumber}</span>
 
             {interviewState === 'active' && (
               <button
@@ -388,10 +433,7 @@ export default function AIInterview() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1">
             <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 sticky top-24">
-              <AIAvatar
-                state={aiState}
-                emotion={aiEmotion}
-              />
+              <AIAvatar state={aiState} emotion={aiEmotion} />
 
               <div className="mt-4 space-y-2">
                 <div
@@ -424,7 +466,7 @@ export default function AIInterview() {
                 </div>
 
                 {statusMessage && (
-                  <div className="text-xs text-purple-300/70 text-center animate-pulse">
+                  <div className="text-xs text-purple-300/70 text-center">
                     {statusMessage}
                   </div>
                 )}
@@ -510,17 +552,15 @@ export default function AIInterview() {
                             : 'bg-white/10 text-white/90 border border-white/10 rounded-tl-sm'
                         }`}
                       >
-                        {msg.role === 'ai' && (
-                          <span className="text-purple-300 font-bold text-xs block mb-1">
-                            Alex 🤖
-                          </span>
-                        )}
-
-                        {msg.role === 'user' && (
-                          <span className="text-blue-300 font-bold text-xs block mb-1">
-                            You 👤
-                          </span>
-                        )}
+                        <span
+                          className={`font-bold text-xs block mb-1 ${
+                            msg.role === 'user'
+                              ? 'text-blue-300'
+                              : 'text-purple-300'
+                          }`}
+                        >
+                          {msg.role === 'user' ? 'You 👤' : 'Alex 🤖'}
+                        </span>
 
                         <p className="whitespace-pre-wrap">
                           {msg.content}
@@ -528,6 +568,23 @@ export default function AIInterview() {
                       </div>
                     </div>
                   ))}
+
+                  {/* Show live speech recognition before submission. */}
+                  {interviewState === 'active' &&
+                    speechRec.isListening &&
+                    speechRec.transcript?.trim() &&
+                    !isProcessing && (
+                      <div className="flex justify-end">
+                        <div className="max-w-[80%] p-3 rounded-2xl text-sm leading-relaxed bg-blue-500/10 text-white/80 border border-blue-400/30 rounded-tr-sm">
+                          <span className="text-blue-300 font-bold text-xs block mb-1">
+                            You 👤 · Listening transcript
+                          </span>
+                          <p className="whitespace-pre-wrap">
+                            {speechRec.transcript.trim()}
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
                   <div ref={messageEndRef} />
                 </div>
@@ -574,36 +631,28 @@ export default function AIInterview() {
                     <p className="text-2xl font-bold text-purple-300">
                       {feedback.totalQuestions || questionNumber}
                     </p>
-                    <p className="text-white/50 text-xs mt-1">
-                      Questions
-                    </p>
+                    <p className="text-white/50 text-xs mt-1">Questions</p>
                   </div>
 
                   <div className="bg-white/5 rounded-xl p-3 text-center">
                     <p className="text-2xl font-bold text-blue-300">
                       {feedback.averageQuality || 0}%
                     </p>
-                    <p className="text-white/50 text-xs mt-1">
-                      Quality
-                    </p>
+                    <p className="text-white/50 text-xs mt-1">Quality</p>
                   </div>
 
                   <div className="bg-white/5 rounded-xl p-3 text-center">
                     <p className="text-2xl font-bold text-emerald-300">
                       {feedback.technicalDepth || 0}%
                     </p>
-                    <p className="text-white/50 text-xs mt-1">
-                      Technical
-                    </p>
+                    <p className="text-white/50 text-xs mt-1">Technical</p>
                   </div>
 
                   <div className="bg-white/5 rounded-xl p-3 text-center">
                     <p className="text-2xl font-bold text-amber-300">
                       {feedback.duration || 0}m
                     </p>
-                    <p className="text-white/50 text-xs mt-1">
-                      Duration
-                    </p>
+                    <p className="text-white/50 text-xs mt-1">Duration</p>
                   </div>
                 </div>
 
@@ -655,10 +704,7 @@ export default function AIInterview() {
                 <div className="mt-6 flex gap-3">
                   <button
                     onClick={() => {
-                      setMessages([]);
-                      setTypedMessage('');
-                      setIsSendingTyped(false);
-                      processedMessageHashes.current.clear();
+                      clearChat();
                       reset();
                     }}
                     className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold rounded-xl hover:shadow-lg hover:shadow-purple-600/30 transition"
@@ -683,11 +729,23 @@ export default function AIInterview() {
         <div className="fixed bottom-6 right-6 z-50">
           <button
             onClick={() => {
-              speechSynth.stop();
+              if (speechSynth?.stop) {
+                speechSynth.stop();
+              }
 
               if (!speechRec.isListening) {
                 speechRec.resetTranscript();
-                speechRec.startListening();
+
+                Promise.resolve(speechRec.startListening()).catch(
+                  (err) => {
+                    console.error(
+                      '[AIInterview] Could not start microphone:',
+                      err
+                    );
+                  }
+                );
+              } else {
+                speechRec.stopListening();
               }
             }}
             className="w-14 h-14 rounded-full bg-gradient-to-br from-purple-600 to-blue-600 text-white shadow-lg shadow-purple-600/30 flex items-center justify-center hover:scale-110 transition-all active:scale-95"
