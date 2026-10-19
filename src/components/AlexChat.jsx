@@ -1,4 +1,4 @@
-import React, {
+﻿import React, {
   useState,
   useRef,
   useEffect,
@@ -1035,6 +1035,10 @@ const AlexChat = ({
   const [uploading, setUploading] =
     useState(false);
 
+  const [editingMessageIndex, setEditingMessageIndex] = useState(null);
+  const requestControllerRef = useRef(null);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+
   const [
     sessionId,
     setSessionId,
@@ -1122,6 +1126,8 @@ const AlexChat = ({
 
   const fileInputRef =
     useRef(null);
+
+  const imageInputRef = useRef(null);
 
   // ==========================================================
   // AUTH
@@ -1986,6 +1992,8 @@ const AlexChat = ({
       setInput("");
       setLoading(true);
       setError(null);
+      const requestController = new AbortController();
+      requestControllerRef.current = requestController;
 
       const userMessage = {
         role: "user",
@@ -2037,6 +2045,7 @@ const AlexChat = ({
               headers:
                 getAuthHeaders(),
               timeout: 120000,
+              signal: requestControllerRef.current?.signal,
             }
           );
         };
@@ -2487,6 +2496,10 @@ if (weather?.daily?.time?.length) {
           );
         }
       } catch (err) {
+        if (axios.isCancel(err) || err?.code === "ERR_CANCELED" || err?.name === "CanceledError" || requestControllerRef.current?.signal.aborted) {
+          setMessages((prev) => prev.filter((item) => item.type !== "typing"));
+          return;
+        }
         setMessages(
           (prev) =>
             prev.filter(
@@ -2611,8 +2624,32 @@ if (weather?.daily?.time?.length) {
         }
       } finally {
         setLoading(false);
+        if (requestControllerRef.current) requestControllerRef.current = null;
       }
     };
+
+  const stopGeneration = () => {
+    if (requestControllerRef.current) requestControllerRef.current.abort();
+    requestControllerRef.current = null;
+    setLoading(false);
+    setMessages((prev) => prev.filter((item) => item.type !== "typing"));
+  };
+
+  const beginEditMessage = (index, content) => {
+    setEditingMessageIndex(index);
+    setInput(String(content || ""));
+    inputRef.current?.focus();
+  };
+
+  const submitEditedMessage = () => {
+    const text = input.trim();
+    if (!text || editingMessageIndex === null) return;
+    const index = editingMessageIndex;
+    setMessages((prev) => prev.slice(0, index));
+    setEditingMessageIndex(null);
+    setInput(text);
+    window.setTimeout(() => sendMessage(text), 0);
+  };
 
   // ==========================================================
   // ENTER
@@ -2626,7 +2663,8 @@ if (weather?.daily?.time?.length) {
         !event.shiftKey
       ) {
         event.preventDefault();
-        sendMessage();
+        if (editingMessageIndex !== null) submitEditedMessage();
+        else sendMessage();
       }
     };
 
@@ -2733,16 +2771,11 @@ if (weather?.daily?.time?.length) {
         position: "fixed",
         inset: 0,
         zIndex: 99999,
-        background:
-          "rgba(2,6,23,0.78)",
-        backdropFilter:
-          "blur(8px)",
+        background: "#212121",
         display: "flex",
-        alignItems:
-          "center",
-        justifyContent:
-          "center",
-        padding: "16px",
+        alignItems: "stretch",
+        justifyContent: "stretch",
+        padding: 0,
       }}
       onMouseDown={(event) => {
         if (
@@ -2755,21 +2788,16 @@ if (weather?.daily?.time?.length) {
     >
       <div
         style={{
-          width:
-            "min(1100px, 100%)",
-          height:
-            "min(850px, 94vh)",
-          background:
-            "linear-gradient(180deg,#111127 0%,#080817 100%)",
-          border:
-            "1px solid rgba(139,92,246,0.35)",
-          borderRadius: "18px",
+          width: "100%",
+          height: "100%",
+          minHeight: 0,
+          background: "#212121",
+          border: "none",
+          borderRadius: 0,
           overflow: "hidden",
           display: "flex",
-          flexDirection:
-            "column",
-          boxShadow:
-            "0 30px 100px rgba(0,0,0,0.55)",
+          flexDirection: "column",
+          boxShadow: "none",
         }}
       >
         {/* ==================================================
@@ -2778,17 +2806,14 @@ if (weather?.daily?.time?.length) {
 
         <div
           style={{
-            minHeight: "64px",
-            padding:
-              "10px 14px",
+            minHeight: "60px",
+            padding: "10px clamp(14px, 3vw, 30px)",
             display: "flex",
             alignItems:
               "center",
             gap: "12px",
-            borderBottom:
-              "1px solid rgba(255,255,255,0.07)",
-            background:
-              "rgba(17,17,39,0.96)",
+            borderBottom: "1px solid #3a3a3a",
+            background: "#212121",
           }}
         >
           <div
@@ -3224,13 +3249,11 @@ if (weather?.daily?.time?.length) {
             flex: 1,
             overflowY:
               "auto",
-            padding:
-              "18px",
-            display:
-              "flex",
-            flexDirection:
-              "column",
-            gap: "12px",
+            padding: "24px clamp(14px, 4vw, 32px)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "20px",
+            background: "#212121",
           }}
         >
           {!authenticated && (
@@ -3341,34 +3364,27 @@ if (weather?.daily?.time?.length) {
 
                   <div
                     style={{
-                      maxWidth:
-                        "82%",
-                      minWidth:
-                        "80px",
+                      maxWidth: isUser ? "min(78%, 760px)" : "min(100%, 900px)",
+                      minWidth: "80px",
                     }}
                   >
                     <div
                       style={{
                         background:
                           isUser
-                            ? "linear-gradient(135deg,#2563eb,#4f46e5)"
-                            : message.type ===
-                              "error"
+                            ? "#303030"
+                            : message.type === "error"
                             ? "rgba(127,29,29,0.35)"
-                            : message.type ===
-                              "system"
+                            : message.type === "system"
                             ? "rgba(124,58,237,0.12)"
-                            : "#15152b",
+                            : "transparent",
                         border:
                           isUser
                             ? "none"
-                            : "1px solid rgba(255,255,255,0.06)",
+                            : "none",
                         color:
                           "#e2e8f0",
-                        borderRadius:
-                          isUser
-                            ? "14px 14px 4px 14px"
-                            : "14px 14px 14px 4px",
+                        borderRadius: isUser ? "20px" : "0",
                         padding:
                           "11px 13px",
                         fontSize:
@@ -3487,6 +3503,11 @@ if (weather?.daily?.time?.length) {
                           )}
                         </div>
                       )}
+                    {isUser && message.type === "message" && !loading && (
+                      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+                        <button type="button" onClick={() => beginEditMessage(index, message.content)} style={{ border: "1px solid #424242", background: "transparent", color: "#b8b8b8", borderRadius: 8, padding: "4px 8px", fontSize: 11, cursor: "pointer" }} title="Edit message">✎ Edit</button>
+                      </div>
+                    )}
                   </div>
 
                   {isUser && (
@@ -3620,28 +3641,21 @@ if (weather?.daily?.time?.length) {
 
         <div
           style={{
-            padding:
-              "10px 14px 14px",
-            borderTop:
-              "1px solid rgba(255,255,255,0.07)",
-            background:
-              "rgba(8,8,23,0.8)",
+            position: "relative",
+            padding: "12px clamp(14px, 4vw, 32px) 18px",
+            borderTop: "1px solid #3a3a3a",
+            background: "#212121",
           }}
         >
-          <input
-            ref={
-              fileInputRef
-            }
-            type="file"
-            style={{
-              display: "none",
-            }}
-            onChange={
-              handleFileSelect
-            }
-            accept=".js,.jsx,.ts,.tsx,.json,.css,.html,.txt,.md,.py,.java,.cpp,.c,.pdf,.doc,.docx"
-          />
+          <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={handleFileSelect} accept=".js,.jsx,.ts,.tsx,.json,.css,.html,.txt,.md,.py,.java,.cpp,.c,.pdf,.doc,.docx,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.webp" />
+          <input ref={imageInputRef} type="file" style={{ display: "none" }} onChange={handleFileSelect} accept="image/*" />
 
+          {editingMessageIndex !== null && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", color: "#b8b8b8", fontSize: 12, marginBottom: 8 }}>
+              <span>Editing message</span>
+              <button type="button" onClick={() => { setEditingMessageIndex(null); setInput(""); }} style={{ background: "transparent", border: 0, color: "#ddd", cursor: "pointer" }}>Cancel</button>
+            </div>
+          )}
           <div
             style={{
               display:
@@ -3653,16 +3667,8 @@ if (weather?.daily?.time?.length) {
           >
             <button
               onClick={() => {
-                if (
-                  !authenticated
-                ) {
-                  setError(
-                    "Login required."
-                  );
-                  return;
-                }
-
-                fileInputRef.current?.click();
+                if (!authenticated) { setError("Login required."); return; }
+                setShowAttachMenu((value) => !value);
               }}
               disabled={
                 loading ||
@@ -3698,11 +3704,18 @@ if (weather?.daily?.time?.length) {
                 fontSize:
                   "17px",
               }}
-              title="Upload file"
+              title="Attach files"
+              aria-label="Attach files"
             >
-              📎
+              +
             </button>
 
+            {showAttachMenu && (
+              <div style={{ position: "absolute", bottom: 84, left: "clamp(14px, 4vw, 32px)", zIndex: 100001, background: "#303030", border: "1px solid #484848", borderRadius: 14, padding: 8, display: "flex", flexDirection: "column", gap: 4, boxShadow: "0 12px 35px rgba(0,0,0,.4)" }}>
+                <button type="button" onClick={() => { setShowAttachMenu(false); fileInputRef.current?.click(); }} style={{ background: "transparent", border: 0, color: "#f1f1f1", padding: "10px 14px", textAlign: "left", borderRadius: 8, cursor: "pointer" }}>📄 Upload file or document</button>
+                <button type="button" onClick={() => { setShowAttachMenu(false); imageInputRef.current?.click(); }} style={{ background: "transparent", border: 0, color: "#f1f1f1", padding: "10px 14px", textAlign: "left", borderRadius: 8, cursor: "pointer" }}>🖼️ Upload image</button>
+              </div>
+            )}
             <textarea
               ref={inputRef}
               value={input}
@@ -3753,14 +3766,12 @@ if (weather?.daily?.time?.length) {
             />
 
             <button
-              onClick={() =>
-                sendMessage()
-              }
-              disabled={
-                loading ||
-                !input.trim() ||
-                !authenticated
-              }
+              onClick={() => {
+                if (loading) stopGeneration();
+                else if (editingMessageIndex !== null) submitEditedMessage();
+                else sendMessage();
+              }}
+              disabled={!loading && (!input.trim() || !authenticated)}
               style={{
                 width:
                   "42px",
@@ -3770,27 +3781,16 @@ if (weather?.daily?.time?.length) {
                 borderRadius:
                   "10px",
                 border: "none",
-                background:
-                  loading ||
-                  !input.trim() ||
-                  !authenticated
-                    ? "#334155"
-                    : "linear-gradient(135deg,#7c3aed,#2563eb)",
+                background: loading ? "#4a2424" : (!input.trim() || !authenticated ? "#334155" : "#303030"),
                 color: "#fff",
-                cursor:
-                  loading ||
-                  !input.trim() ||
-                  !authenticated
-                    ? "not-allowed"
-                    : "pointer",
+                cursor: (!loading && (!input.trim() || !authenticated)) ? "not-allowed" : "pointer",
                 fontSize:
                   "17px",
               }}
-              title="Send"
+              title={loading ? "Stop generating" : editingMessageIndex !== null ? "Save and resend edited message" : "Send"}
+              aria-label={loading ? "Stop generating" : "Send message"}
             >
-              {loading
-                ? "..."
-                : "➤"}
+              {loading ? "■" : editingMessageIndex !== null ? "✓" : "↑"}
             </button>
           </div>
 
@@ -3911,10 +3911,15 @@ if (weather?.daily?.time?.length) {
               }
             }
 
+            .alex-content { overflow-wrap: anywhere; }
+            .alex-content pre { max-width: 100%; }
+            button { transition: background-color .15s ease, border-color .15s ease, opacity .15s ease; }
+            button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid #8b8b8b; outline-offset: 2px; }
             @media (max-width: 700px) {
-              .alex-content {
-                font-size: 13px !important;
-              }
+              .alex-content { font-size: 13px !important; }
+            }
+            @media (max-width: 520px) {
+              .alex-content pre { font-size: 11px; }
             }
           `}
         </style>
