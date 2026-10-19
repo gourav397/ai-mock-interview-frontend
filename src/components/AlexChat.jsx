@@ -1383,6 +1383,74 @@ const AlexChat = ({
       ]
     );
 
+  // ChatGPT-style session history
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [chatHistory, setChatHistory] = useState([]);
+  const [historySearch, setHistorySearch] = useState("");
+
+  const fetchChatHistory = useCallback(async () => {
+    if (!authenticated) {
+      setChatHistory([]);
+      return;
+    }
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      const response = await axios.get(`${API_BASE}/api/alex/chat/sessions`, {
+        headers: getAuthHeaders(), timeout: 30000,
+      });
+      const data = response?.data;
+      if (data?.success && Array.isArray(data.data)) {
+        setChatHistory(data.data.slice().sort((a, b) =>
+          new Date(b.lastActivity || b.createdAt || 0) - new Date(a.lastActivity || a.createdAt || 0)
+        ));
+      } else {
+        setChatHistory([]);
+      }
+    } catch (err) {
+      setHistoryError(err?.response?.data?.error || "Chat history load nahi ho saki.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [authenticated, getAuthHeaders]);
+
+  useEffect(() => {
+    if (isOpen && authenticated) fetchChatHistory();
+  }, [isOpen, authenticated, fetchChatHistory]);
+
+  const openHistoricalChat = useCallback(async (id) => {
+    if (!id || loading) return;
+    const loaded = await loadSession(id);
+    if (loaded) {
+      setHistoryOpen(false);
+      setError(null);
+    } else {
+      setHistoryError("Yeh chat abhi load nahi ho paayi. History refresh karke dobara try karein.");
+      fetchChatHistory();
+    }
+  }, [loading, loadSession, fetchChatHistory]);
+
+  const groupChatHistory = (items) => {
+    const now = new Date();
+    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startYesterday = startToday - 86400000;
+    const startWeek = startToday - 7 * 86400000;
+    const groups = { Today: [], Yesterday: [], "Previous 7 days": [], Older: [] };
+    const filtered = items.filter((item) => {
+      if (!historySearch.trim()) return true;
+      return String(item.title || item.preview || item.lastMessage || "").toLowerCase().includes(historySearch.trim().toLowerCase())
+        || String(item.id || "").toLowerCase().includes(historySearch.trim().toLowerCase());
+    });
+    filtered.forEach((item) => {
+      const t = new Date(item.lastActivity || item.createdAt || 0).getTime();
+      const group = t >= startToday ? "Today" : t >= startYesterday ? "Yesterday" : t >= startWeek ? "Previous 7 days" : "Older";
+      groups[group].push(item);
+    });
+    return groups;
+  };
+
   // ==========================================================
   // INITIAL SESSION
   // ==========================================================
@@ -2717,27 +2785,9 @@ if (weather?.daily?.time?.length) {
 
       setSessionId(null);
 
-      try {
-        if (
-          oldSession &&
-          authenticated
-        ) {
-          await axios.delete(
-            `${API_BASE}/api/alex/chat/sessions/${encodeURIComponent(
-              oldSession
-            )}`,
-            {
-              headers:
-                getAuthHeaders(),
-              timeout: 30000,
-            }
-          );
-        }
-      } catch {
-        /*
-         * Local reset still succeeds.
-         */
-      }
+      // Starting a new chat must NOT delete the previous conversation.
+      // It remains available in the history sidebar.
+      if (authenticated) fetchChatHistory();
 
       setMessages([
         {
@@ -2800,6 +2850,41 @@ if (weather?.daily?.time?.length) {
           boxShadow: "none",
         }}
       >
+        {historyOpen && (
+          <div style={{ position: "absolute", inset: 0, zIndex: 100000, display: "flex", background: "rgba(0,0,0,0.48)" }} onMouseDown={(e) => { if (e.target === e.currentTarget) setHistoryOpen(false); }}>
+            <aside style={{ width: "min(340px, 88vw)", height: "100%", display: "flex", flexDirection: "column", background: "#171717", borderRight: "1px solid #383838", boxShadow: "12px 0 36px rgba(0,0,0,.35)", color: "#f3f4f6" }}>
+              <div style={{ padding: 16, borderBottom: "1px solid #333", display: "flex", alignItems: "center", gap: 8 }}>
+                <strong style={{ flex: 1, fontSize: 15 }}>Chat history</strong>
+                <button onClick={() => { setHistoryOpen(false); resetSession(); }} disabled={loading} style={{ border: "1px solid #444", background: "#252525", color: "#fff", borderRadius: 8, padding: "8px 10px", cursor: loading ? "not-allowed" : "pointer" }}>＋ New Chat</button>
+                <button onClick={() => setHistoryOpen(false)} aria-label="Close history" style={{ border: 0, background: "transparent", color: "#aaa", fontSize: 20, cursor: "pointer" }}>×</button>
+              </div>
+              <div style={{ padding: "12px 12px 4px" }}>
+                <input value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} placeholder="Search chats" style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", background: "#252525", border: "1px solid #414141", borderRadius: 9, color: "#f9fafb", outline: "none" }} />
+              </div>
+              <div style={{ padding: 12, overflowY: "auto", flex: 1 }}>
+                {historyLoading && <div style={{ color: "#9ca3af", padding: 10, fontSize: 13 }}>Loading history…</div>}
+                {!!historyError && <div style={{ color: "#fca5a5", padding: 10, fontSize: 12 }}>{historyError}</div>}
+                {!historyLoading && chatHistory.length === 0 && <div style={{ color: "#9ca3af", padding: 10, fontSize: 13 }}>Abhi koi saved chat nahi mili.</div>}
+                {Object.entries(groupChatHistory(chatHistory)).map(([groupName, items]) => items.length > 0 && (
+                  <section key={groupName} style={{ marginBottom: 16 }}>
+                    <div style={{ color: "#9ca3af", fontSize: 11, fontWeight: 700, letterSpacing: ".06em", padding: "8px 8px" }}>{groupName.toUpperCase()}</div>
+                    {items.map((item) => {
+                      const active = String(item.id) === String(sessionId);
+                      const date = new Date(item.lastActivity || item.createdAt || Date.now());
+                      const label = item.title || item.preview || item.lastMessage || `Chat · ${date.toLocaleDateString()}`;
+                      return <button key={item.id} onClick={() => openHistoricalChat(item.id)} style={{ width: "100%", textAlign: "left", display: "block", border: active ? "1px solid #555" : "1px solid transparent", background: active ? "#303030" : "transparent", color: "#e5e7eb", padding: "10px 11px", borderRadius: 9, marginBottom: 3, cursor: "pointer" }}>
+                        <div style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
+                        <div style={{ color: "#888", fontSize: 10, marginTop: 5 }}>{date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · {item.messageCount || 0} messages</div>
+                      </button>;
+                    })}
+                  </section>
+                ))}
+                <button onClick={fetchChatHistory} style={{ width: "100%", border: "1px solid #3c3c3c", background: "transparent", color: "#cbd5e1", padding: 9, borderRadius: 8, cursor: "pointer", marginTop: 8 }}>↻ Refresh history</button>
+              </div>
+            </aside>
+            <div style={{ flex: 1 }} />
+          </div>
+        )}
         {/* ==================================================
             HEADER
         ================================================== */}
@@ -3024,6 +3109,14 @@ if (weather?.daily?.time?.length) {
               )}
             </>
           )}
+
+          <button
+            onClick={() => { setHistoryOpen((v) => !v); fetchChatHistory(); }}
+            title="Chat history"
+            style={{ background: historyOpen ? "#343434" : "rgba(255,255,255,0.06)", border: "1px solid #444", color: "#e5e7eb", borderRadius: "8px", padding: "7px 10px", cursor: "pointer", fontSize: "12px", whiteSpace: "nowrap" }}
+          >
+            ☰ History
+          </button>
 
           <button
             onClick={
