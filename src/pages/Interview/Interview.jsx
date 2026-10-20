@@ -15,9 +15,7 @@ const QUESTION_COUNTS = {
   Hard: 40,
 };
 
-const REQUEST_TIMEOUT = 120000;
-const MAX_RETRIES = 2;
-
+const REQUEST_TIMEOUT = 240000;
 function Interview() {
   const navigate = useNavigate();
 
@@ -77,98 +75,50 @@ function Interview() {
         typeof opt === "object" && Boolean(getOptionExplanation(opt))
     );
 
-  // Interview request: retry only transient server errors/timeouts.
+ 
   const startInterview = async () => {
     if (loading) return;
 
-    if (!jobRole.trim()) {
+    const category = jobRole.trim();
+
+    if (!category) {
       alert("Please enter a Job Role before starting!");
       return;
     }
 
+    const count = QUESTION_COUNTS[difficulty] || 30;
+
     setLoading(true);
     setStatusMessage(
-      `Preparing ${QUESTION_COUNTS[difficulty]} ${difficulty} questions for ${jobRole.trim()}...`
+      `Preparing ${count} ${difficulty} questions for ${category}...`
     );
 
     try {
-      const count = QUESTION_COUNTS[difficulty] || 30;
-      let response = null;
-      let lastError = null;
+      setStatusMessage(
+        `AI is generating ${count} questions. Please wait...`
+      );
 
-      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-        try {
-          if (attempt > 0) {
-            setStatusMessage(
-              `Server is busy. Retrying (${attempt}/${MAX_RETRIES})...`
-            );
-            await new Promise((resolve) =>
-              setTimeout(resolve, attempt * 2500)
-            );
-          }
-
-          response = await API.get("/api/ai-interview/generate", {
-            params: {
-              category: jobRole.trim(),
-              difficulty,
-              count,
-              experience,
-              type: "interview",
-            },
-            timeout: REQUEST_TIMEOUT,
-          });
-
-          lastError = null;
-          break;
-        } catch (error) {
-          lastError = error;
-
-          const status = error.response?.status;
-          const transient =
-            !status ||
-            status === 408 ||
-            status === 409 ||
-            status === 429 ||
-            status === 500 ||
-            status === 502 ||
-            status === 503 ||
-            status === 504 ||
-            error.code === "ECONNABORTED" ||
-            error.code === "ETIMEDOUT";
-
-          if (!transient || attempt === MAX_RETRIES) break;
-        }
-      }
-
-      if (lastError) {
-        const status = lastError.response?.status;
-        const serverMessage = lastError.response?.data?.message;
-
-        if (
-          status === 503 ||
-          status === 502 ||
-          status === 504 ||
-          lastError.code === "ECONNABORTED" ||
-          lastError.code === "ETIMEDOUT"
-        ) {
-          throw new Error(
-            serverMessage ||
-              "Server ya AI service abhi busy hai. Thodi der baad dobara try karo."
-          );
-        }
-
-        throw new Error(
-          serverMessage || lastError.message || "Questions load nahi hue."
-        );
-      }
+      // One request only: prevent automatic duplicate generation calls.
+      const response = await API.get("/api/ai-interview/generate", {
+        params: {
+          category,
+          difficulty,
+          count,
+          experience,
+          type: "interview",
+        },
+        timeout: REQUEST_TIMEOUT,
+      });
 
       const data = response?.data;
-      const qs = Array.isArray(data?.questions) ? data.questions : [];
+      const qs = Array.isArray(data?.questions)
+        ? data.questions
+        : [];
 
-      if (!qs.length) {
+      if (qs.length === 0) {
         throw new Error(
           data?.message ||
-            "Is category ke questions abhi available nahi hain. Dobara try karo."
+            "AI ne questions return nahi kiye. Backend logs check karke dobara try karo."
         );
       }
 
@@ -184,25 +134,54 @@ function Interview() {
       setVoiceNotes({});
       setConfidence({});
       setFeedback({});
-      setStatusMessage("");
       setStarted(true);
 
-      if (qs.length < count) {
-        setStatusMessage(
-          `Note: ${count} requested the, lekin server ne ${qs.length} questions diye hain.`
-        );
-      }
-    } catch (error) {
-      console.error("Interview start error:", error);
-
-      alert(
-        error.message ||
-          "Interview questions load nahi hue. Please try again."
+      setStatusMessage(
+        qs.length < count
+          ? `${count} questions requested the, lekin server ne ${qs.length} diye.`
+          : `${qs.length} questions ready.`
       );
+    } catch (error) {
+      console.error("Interview generation failed:", {
+        message: error?.message,
+        code: error?.code,
+        status: error?.response?.status,
+        response: error?.response?.data,
+      });
+
+      const status = error?.response?.status;
+      const serverMessage = error?.response?.data?.message;
+
+      let message;
+
+      if (
+        error?.code === "ERR_CANCELED" ||
+        error?.code === "ECONNABORTED" ||
+        error?.code === "ETIMEDOUT"
+      ) {
+        message =
+          "Question generation request cancel ya timeout ho gayi. Render backend logs check karo; turant baar-baar Start button mat dabao.";
+      } else if (status === 503 || status === 502 || status === 504) {
+        message =
+          serverMessage ||
+          "AI service abhi busy hai. Render logs check karke kuch der baad try karo.";
+      } else if (!status && error?.message) {
+        message =
+          "Backend se connection fail hua. Backend URL aur Render service status check karo.";
+      } else {
+        message =
+          serverMessage ||
+          error?.message ||
+          "Interview questions load nahi hue. Please try again.";
+      }
+
+      setStatusMessage(message);
+      alert(message);
     } finally {
       setLoading(false);
     }
   };
+
 
   useEffect(() => {
     if (!started || finished) return;
