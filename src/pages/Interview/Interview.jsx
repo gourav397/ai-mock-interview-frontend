@@ -1,4 +1,5 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+
+import { useEffect, useState, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import API from "../../services/api";
 
@@ -14,16 +15,16 @@ const QUESTION_COUNTS = {
   Hard: 40,
 };
 
+const REQUEST_TIMEOUT = 120000;
+const MAX_RETRIES = 2;
+
 function Interview() {
   const navigate = useNavigate();
 
-  // ─── Interview Config ──────────────────────────────────────────
   const [jobRole, setJobRole] = useState("");
   const [experience, setExperience] = useState("Fresher");
   const [difficulty, setDifficulty] = useState("Medium");
-  const [techStack, setTechStack] = useState("");
 
-  // ─── Interview State ───────────────────────────────────────────
   const [questions, setQuestions] = useState([]);
   const [started, setStarted] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -38,14 +39,12 @@ function Interview() {
   const [savedResultId, setSavedResultId] = useState(null);
   const [statusMessage, setStatusMessage] = useState("");
 
-  // ─── Voice / Notes ─────────────────────────────────────────────
   const [voiceNotes, setVoiceNotes] = useState({});
   const [recording, setRecording] = useState(false);
   const [recordingFor, setRecordingFor] = useState(null);
   const mediaRecorder = useRef(null);
   const audioChunks = useRef([]);
 
-  // ─── Confidence / Feedback ────────────────────────────────────
   const [confidence, setConfidence] = useState({});
   const [feedback, setFeedback] = useState({});
 
@@ -57,7 +56,6 @@ function Interview() {
     "Lead (10+ yrs)",
   ];
 
-  // ─── Utility ──────────────────────────────────────────────────
   const formatTime = (secs) => {
     const h = Math.floor(secs / 3600);
     const m = Math.floor((secs % 3600) / 60);
@@ -67,60 +65,111 @@ function Interview() {
 
   const getOptionExplanation = (opt) => {
     if (typeof opt === "string") return "";
-    if (opt.explanation) return opt.explanation;
-    if (opt.info) return opt.info;
-    if (opt.description) return opt.description;
-    if (opt.detail) return opt.detail;
-    return "";
+    return opt?.explanation || opt?.info || opt?.description || opt?.detail || "";
   };
 
-  const getGeneralExplanation = (q) => {
-    if (q.explanation) return q.explanation;
-    if (q.description) return q.description;
-    if (q.detail) return q.detail;
-    return "";
-  };
+  const getGeneralExplanation = (q) =>
+    q?.explanation || q?.description || q?.detail || "";
 
-  const anyOptionHasExplanation = (q) => {
-    return q.options?.some((opt) => typeof opt === "object" && getOptionExplanation(opt));
-  };
+  const anyOptionHasExplanation = (q) =>
+    q.options?.some(
+      (opt) =>
+        typeof opt === "object" && Boolean(getOptionExplanation(opt))
+    );
 
-  // ─── Start Interview (with auto-retry) ────────────────────────
-  const startInterview = async (retryCount = 0) => {
+  // Interview request: retry only transient server errors/timeouts.
+  const startInterview = async () => {
+    if (loading) return;
+
     if (!jobRole.trim()) {
       alert("Please enter a Job Role before starting!");
       return;
     }
-    if (!techStack.trim()) {
-      alert("Please enter a Tech Stack before starting!");
-      return;
-    }
 
     setLoading(true);
-    if (retryCount > 0) {
-      setStatusMessage(`🔄 Preparing questions... (attempt ${retryCount}/5)`);
-    } else {
-      setStatusMessage(`🤖 AI generating ${difficulty} questions for ${jobRole}...`);
-    }
+    setStatusMessage(
+      `Preparing ${QUESTION_COUNTS[difficulty]} ${difficulty} questions for ${jobRole.trim()}...`
+    );
 
     try {
       const count = QUESTION_COUNTS[difficulty] || 30;
-      const res = await API.get("/api/ai-interview/generate", {
-        params: {
-          category: jobRole,
-          difficulty,
-          count,
-          experience,
-          techStack,
-          type: "interview",
-        },
-        timeout: 25000,
-      });
+      let response = null;
+      let lastError = null;
 
-      const qs = res.data.questions || [];
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          if (attempt > 0) {
+            setStatusMessage(
+              `Server is busy. Retrying (${attempt}/${MAX_RETRIES})...`
+            );
+            await new Promise((resolve) =>
+              setTimeout(resolve, attempt * 2500)
+            );
+          }
+
+          response = await API.get("/api/ai-interview/generate", {
+            params: {
+              category: jobRole.trim(),
+              difficulty,
+              count,
+              experience,
+              type: "interview",
+            },
+            timeout: REQUEST_TIMEOUT,
+          });
+
+          lastError = null;
+          break;
+        } catch (error) {
+          lastError = error;
+
+          const status = error.response?.status;
+          const transient =
+            !status ||
+            status === 408 ||
+            status === 409 ||
+            status === 429 ||
+            status === 500 ||
+            status === 502 ||
+            status === 503 ||
+            status === 504 ||
+            error.code === "ECONNABORTED" ||
+            error.code === "ETIMEDOUT";
+
+          if (!transient || attempt === MAX_RETRIES) break;
+        }
+      }
+
+      if (lastError) {
+        const status = lastError.response?.status;
+        const serverMessage = lastError.response?.data?.message;
+
+        if (
+          status === 503 ||
+          status === 502 ||
+          status === 504 ||
+          lastError.code === "ECONNABORTED" ||
+          lastError.code === "ETIMEDOUT"
+        ) {
+          throw new Error(
+            serverMessage ||
+              "Server ya AI service abhi busy hai. Thodi der baad dobara try karo."
+          );
+        }
+
+        throw new Error(
+          serverMessage || lastError.message || "Questions load nahi hue."
+        );
+      }
+
+      const data = response?.data;
+      const qs = Array.isArray(data?.questions) ? data.questions : [];
+
       if (!qs.length) {
-        alert("Is category me interview questions nahi mile");
-        return;
+        throw new Error(
+          data?.message ||
+            "Is category ke questions abhi available nahi hain. Dobara try karo."
+        );
       }
 
       setQuestions(qs);
@@ -137,130 +186,165 @@ function Interview() {
       setFeedback({});
       setStatusMessage("");
       setStarted(true);
+
+      if (qs.length < count) {
+        setStatusMessage(
+          `Note: ${count} requested the, lekin server ne ${qs.length} questions diye hain.`
+        );
+      }
     } catch (error) {
-      const status = error.response?.status;
-      const msg = error.response?.data?.message || "";
+      console.error("Interview start error:", error);
 
-      // Auto-retry for 409 (bank building) — max 5 retries
-      if (status === 409 && retryCount < 5) {
-        const waitTime = Math.min(1000 * (retryCount + 1), 5000);
-        console.log(`⏳ Bank building... retry ${retryCount + 1}/5 in ${waitTime}ms`);
-        setStatusMessage(`🔄 Questions are being prepared... (attempt ${retryCount + 1}/5)`);
-        await new Promise((r) => setTimeout(r, waitTime));
-        return startInterview(retryCount + 1);
-      }
-
-      if (status === 503 || error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
-        alert("⏱️ Server is busy — please try again in a few seconds.");
-      } else if (status === 409) {
-        alert("Server is still preparing questions. Please try again.");
-      } else {
-        alert(msg || "Interview questions load nahi hue. Please try again.");
-      }
-      console.log("Interview start error:", error);
+      alert(
+        error.message ||
+          "Interview questions load nahi hue. Please try again."
+      );
     } finally {
       setLoading(false);
-      setStatusMessage("");
     }
   };
 
-  // ─── Timer ────────────────────────────────────────────────────
   useEffect(() => {
     if (!started || finished) return;
+
     if (timeLeft <= 0) {
       setTimeUp(true);
       setFinished(true);
       return;
     }
-    const t = setTimeout(() => setTimeLeft((p) => p - 1), 1000);
-    return () => clearTimeout(t);
+
+    const timer = setTimeout(() => {
+      setTimeLeft((previous) => previous - 1);
+    }, 1000);
+
+    return () => clearTimeout(timer);
   }, [timeLeft, started, finished]);
 
-  // ─── Navigation ───────────────────────────────────────────────
   const goNext = () => {
-    if (current < questions.length - 1) setCurrent((c) => c + 1);
-    else setFinished(true);
+    if (current < questions.length - 1) {
+      setCurrent((value) => value + 1);
+    } else {
+      setFinished(true);
+    }
   };
 
   const goPrev = () => {
-    if (current > 0) setCurrent((c) => c - 1);
+    if (current > 0) setCurrent((value) => value - 1);
   };
 
   const submitAnswer = () => {
-    const selected = answers[current];
-    if (!selected) {
-      alert("Pehle option select karo (ya Skip dabao)");
+    if (!answers[current]) {
+      alert("Pehle option select karo ya Skip dabao.");
       return;
     }
     goNext();
   };
 
   const skipQuestion = () => {
-    setAnswers((prev) => {
-      const n = { ...prev };
-      delete n[current];
-      return n;
+    setAnswers((previous) => {
+      const next = { ...previous };
+      delete next[current];
+      return next;
     });
     goNext();
   };
 
-  // ─── Voice Recording ──────────────────────────────────────────
-  const startRecording = async (qIndex) => {
+  const startRecording = async (questionIndex) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+        alert("Is browser mein voice recording supported nahi hai.");
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
+
       const recorder = new MediaRecorder(stream);
       mediaRecorder.current = recorder;
       audioChunks.current = [];
 
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunks.current.push(e.data);
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunks.current.push(event.data);
       };
 
       recorder.onstop = () => {
-        const blob = new Blob(audioChunks.current, { type: "audio/webm" });
+        const blob = new Blob(audioChunks.current, {
+          type: recorder.mimeType || "audio/webm",
+        });
         const url = URL.createObjectURL(blob);
-        setVoiceNotes((prev) => ({ ...prev, [qIndex]: url }));
-        stream.getTracks().forEach((t) => t.stop());
+
+        setVoiceNotes((previous) => ({
+          ...previous,
+          [questionIndex]: url,
+        }));
+
+        stream.getTracks().forEach((track) => track.stop());
       };
 
       recorder.start();
       setRecording(true);
-      setRecordingFor(qIndex);
-    } catch (err) {
-      console.log("Mic error:", err);
-      alert("Microphone access nahi mila. Check permissions.");
+      setRecordingFor(questionIndex);
+    } catch (error) {
+      console.error("Microphone error:", error);
+      alert("Microphone access nahi mila. Browser permissions check karo.");
     }
   };
 
   const stopRecording = () => {
-    if (mediaRecorder.current && mediaRecorder.current.state === "recording") {
+    if (
+      mediaRecorder.current &&
+      mediaRecorder.current.state === "recording"
+    ) {
       mediaRecorder.current.stop();
       setRecording(false);
       setRecordingFor(null);
     }
   };
 
-  // ─── Confidence Slider ────────────────────────────────────────
-  const updateConfidence = (qIndex, value) => {
-    setConfidence((prev) => ({ ...prev, [qIndex]: value }));
-    const fb = value >= 80 ? "Excellent 💪" : value >= 60 ? "Good 👍" : value >= 40 ? "Average 👌" : "Needs Practice 📖";
-    setFeedback((prev) => ({ ...prev, [qIndex]: fb }));
+  const updateConfidence = (questionIndex, value) => {
+    setConfidence((previous) => ({
+      ...previous,
+      [questionIndex]: value,
+    }));
+
+    const message =
+      value >= 80
+        ? "Excellent 💪"
+        : value >= 60
+        ? "Good 👍"
+        : value >= 40
+        ? "Average 👌"
+        : "Needs Practice 📖";
+
+    setFeedback((previous) => ({
+      ...previous,
+      [questionIndex]: message,
+    }));
   };
 
-  // ─── Scoring ──────────────────────────────────────────────────
   const finalScore = questions.reduce(
-    (s, q, i) => (answers[i] && answers[i] === q.correctAnswer ? s + 1 : s),
+    (score, question, index) =>
+      answers[index] && answers[index] === question.correctAnswer
+        ? score + 1
+        : score,
     0
   );
 
-  const percentage = questions.length ? Math.round((finalScore / questions.length) * 100) : 0;
+  const percentage = questions.length
+    ? Math.round((finalScore / questions.length) * 100)
+    : 0;
 
   const actualSkippedCount = questions.reduce(
-    (count, _, i) => (answers[i] === undefined || answers[i] === null ? count + 1 : count),
+    (count, _, index) =>
+      answers[index] === undefined || answers[index] === null
+        ? count + 1
+        : count,
     0
   );
 
-  const actualWrongCount = questions.length - finalScore - actualSkippedCount;
+  const actualWrongCount =
+    questions.length - finalScore - actualSkippedCount;
 
   const performance =
     finalScore >= questions.length * 0.8
@@ -269,7 +353,6 @@ function Interview() {
       ? "Good 👍"
       : "Need More Practice 📖";
 
-  // ─── Filter System ────────────────────────────────────────────
   const filters = [
     { key: "all", label: "📋 All", count: questions.length },
     { key: "correct", label: "✅ Correct", count: finalScore },
@@ -278,59 +361,72 @@ function Interview() {
   ];
 
   const filteredIndexes = questions
-    .map((q, i) => ({ q, i }))
-    .filter(({ q, i }) => {
-      const ua = answers[i] || "";
-      const sk = !answers[i] && answers[i] !== 0;
-      const ic = ua === q.correctAnswer;
-      if (reviewFilter === "correct") return ic;
-      if (reviewFilter === "wrong") return !sk && !ic;
-      if (reviewFilter === "skipped") return sk;
+    .map((question, index) => ({ question, index }))
+    .filter(({ question, index }) => {
+      const userAnswer = answers[index] || "";
+      const skipped = !answers[index];
+      const correct = userAnswer === question.correctAnswer;
+
+      if (reviewFilter === "correct") return correct;
+      if (reviewFilter === "wrong") return !skipped && !correct;
+      if (reviewFilter === "skipped") return skipped;
       return true;
     })
-    .map(({ i }) => i);
+    .map(({ index }) => index);
 
-  // ─── Save Interview Result ────────────────────────────────────
   const saveResult = async () => {
     if (saving || saved) return;
+
     setSaving(true);
 
     try {
-      const user = JSON.parse(localStorage.getItem("user"));
-      if (!user || !user.id) {
-        alert("Login karo pehle");
+      const user = JSON.parse(localStorage.getItem("user") || "null");
+
+      if (!user?.id) {
+        alert("Result save karne ke liye pehle login karo.");
         return;
       }
 
-      const questionsWithAnswers = questions.map((q, i) => {
+      const questionsWithAnswers = questions.map((question, index) => {
         const optionExplanations = {};
-        if (q.options) {
-          q.options.forEach((opt, oi) => {
-            const exp = typeof opt === "object" ? getOptionExplanation(opt) : "";
-            if (exp) optionExplanations[oi] = exp;
+
+        if (Array.isArray(question.options)) {
+          question.options.forEach((option, optionIndex) => {
+            const explanation =
+              typeof option === "object"
+                ? getOptionExplanation(option)
+                : "";
+
+            if (explanation) {
+              optionExplanations[optionIndex] = explanation;
+            }
           });
         }
 
         return {
-          question: q.question,
-          options: q.options,
-          correctAnswer: q.correctAnswer,
-          explanation: getGeneralExplanation(q),
+          question: question.question,
+          options: question.options,
+          correctAnswer: question.correctAnswer,
+          explanation: getGeneralExplanation(question),
           optionExplanations,
-          userAnswer: answers[i] || null,
-          isCorrect: answers[i] ? answers[i] === q.correctAnswer : false,
-          voiceNote: voiceNotes[i] || null,
-          confidence: confidence[i] || null,
-          feedback: feedback[i] || null,
+          userAnswer: answers[index] || null,
+          isCorrect: Boolean(
+            answers[index] &&
+              answers[index] === question.correctAnswer
+          ),
+          voiceNote: voiceNotes[index] || null,
+          confidence: confidence[index] ?? null,
+          feedback: feedback[index] || null,
         };
       });
 
+      const confidenceValues = Object.values(confidence);
+
       const payload = {
         user: user.id,
-        category: jobRole,
+        category: jobRole.trim(),
         difficulty,
         experience,
-        techStack,
         type: "interview",
         totalQuestions: questions.length,
         score: finalScore,
@@ -339,18 +435,22 @@ function Interview() {
         wrongQuestions: actualWrongCount,
         skippedQuestions: actualSkippedCount,
         performance,
-        averageConfidence: Object.values(confidence).length
-          ? Math.round(Object.values(confidence).reduce((a, b) => a + b, 0) / Object.values(confidence).length)
+        averageConfidence: confidenceValues.length
+          ? Math.round(
+              confidenceValues.reduce((total, value) => total + value, 0) /
+                confidenceValues.length
+            )
           : 0,
         questionsData: questionsWithAnswers,
       };
 
-      const res = await API.post("/results", payload);
+      const response = await API.post("/results", payload);
+
       setSaved(true);
-      setSavedResultId(res.data.result?._id || null);
-    } catch (err) {
-      console.log("SAVE ERROR =", err.response?.data || err.message);
-      alert("Result save nahi hua — wapas try karo");
+      setSavedResultId(response.data?.result?._id || null);
+    } catch (error) {
+      console.error("SAVE ERROR =", error.response?.data || error.message);
+      alert("Result save nahi hua. Please dobara try karo.");
     } finally {
       setSaving(false);
     }
@@ -363,232 +463,272 @@ function Interview() {
       ? "text-amber-600"
       : "text-green-600";
 
-  // ─── RENDER ────────────────────────────────────────────────────
+  const resetInterview = () => {
+    setStarted(false);
+    setFinished(false);
+    setQuestions([]);
+    setAnswers({});
+    setCurrent(0);
+    setTimeLeft(0);
+    setTimeUp(false);
+    setSaved(false);
+    setSavedResultId(null);
+    setVoiceNotes({});
+    setConfidence({});
+    setFeedback({});
+    setStatusMessage("");
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-indigo-950 to-slate-900">
-      {/* HEADER */}
-      <header className="bg-white/5 backdrop-blur-xl border-b border-white/10 sticky top-0 z-50">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+      <header className="sticky top-0 z-50 border-b border-white/10 bg-white/5 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           <Link to="/dashboard" className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-blue-500 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-xs">AI</span>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 to-blue-500">
+              <span className="text-xs font-bold text-white">AI</span>
             </div>
-            <span className="text-white font-bold">Interview</span>
+            <span className="font-bold text-white">Interview</span>
           </Link>
 
           <div className="flex items-center gap-4 text-sm">
             <span className="text-white/50">
               {jobRole || "Interview"} — {difficulty}
             </span>
-            <button onClick={() => navigate("/dashboard")} className="text-purple-300 hover:text-white transition">
+            <button
+              onClick={() => navigate("/dashboard")}
+              className="text-purple-300 transition hover:text-white"
+            >
               ← Dashboard
             </button>
           </div>
         </div>
       </header>
 
-      <div className="max-w-4xl mx-auto px-4 py-8">
+      <div className="mx-auto max-w-4xl px-4 py-8">
         {!started ? (
-          /* ─── CONFIGURATION SCREEN ──────────────────────────── */
-          <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10">
-            <h1 className="text-3xl font-bold text-white">🎤 AI Mock Interview</h1>
-            <p className="text-white/50 mt-1">Practice with real interview questions</p>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur-sm">
+            <h1 className="text-3xl font-bold text-white">
+              🎤 AI Interview
+            </h1>
+            <p className="mt-1 text-white/50">
+              Practice with interview questions generated for your chosen role.
+            </p>
 
             <div className="mt-6 space-y-5">
-              {/* Job Role */}
               <div>
-                <label className="text-white/70 text-sm font-semibold block mb-1.5">
-                  💼 Job Role <span className="text-red-400">*</span>
+                <label className="mb-1.5 block text-sm font-semibold text-white/70">
+                  💼 Job Role / Category <span className="text-red-400">*</span>
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Frontend Developer, DevOps Engineer, Data Scientist"
+                  placeholder="e.g. Frontend Developer, Haryana GK, Python, Reasoning"
                   value={jobRole}
-                  onChange={(e) => setJobRole(e.target.value)}
-                  className="w-full bg-white/10 border border-white/20 text-white p-3 rounded-xl placeholder-white/30 focus:border-purple-400 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
+                  onChange={(event) => setJobRole(event.target.value)}
+                  disabled={loading}
+                  className="w-full rounded-xl border border-white/20 bg-white/10 p-3 text-white placeholder-white/30 focus:border-purple-400 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
                 />
               </div>
 
-              {/* Tech Stack */}
               <div>
-                <label className="text-white/70 text-sm font-semibold block mb-1.5">
-                  🛠️ Tech Stack <span className="text-red-400">*</span>
+                <label className="mb-1.5 block text-sm font-semibold text-white/70">
+                  📅 Experience Level
                 </label>
-                <input
-                  type="text"
-                  placeholder="e.g. React, Node.js, Python, AWS"
-                  value={techStack}
-                  onChange={(e) => setTechStack(e.target.value)}
-                  className="w-full bg-white/10 border border-white/20 text-white p-3 rounded-xl placeholder-white/30 focus:border-purple-400 focus:outline-none focus:ring-1 focus:ring-purple-400/50"
-                />
-              </div>
-
-              {/* Experience */}
-              <div>
-                <label className="text-white/70 text-sm font-semibold block mb-1.5">📅 Experience Level</label>
                 <select
-                  className="w-full bg-white/10 border border-white/20 text-white p-3 rounded-xl"
+                  className="w-full rounded-xl border border-white/20 bg-white/10 p-3 text-white"
                   value={experience}
-                  onChange={(e) => setExperience(e.target.value)}
+                  onChange={(event) => setExperience(event.target.value)}
+                  disabled={loading}
                 >
-                  {experienceLevels.map((lev) => (
-                    <option key={lev} className="bg-gray-800" value={lev}>
-                      {lev}
+                  {experienceLevels.map((level) => (
+                    <option key={level} className="bg-gray-800" value={level}>
+                      {level}
                     </option>
                   ))}
                 </select>
               </div>
 
-              {/* Difficulty */}
               <div>
-                <label className="text-white/70 text-sm font-semibold block mb-1.5">Select Difficulty</label>
+                <label className="mb-1.5 block text-sm font-semibold text-white/70">
+                  Select Difficulty
+                </label>
                 <select
-                  className="w-full bg-white/10 border border-white/20 text-white p-3 rounded-xl"
+                  className="w-full rounded-xl border border-white/20 bg-white/10 p-3 text-white"
                   value={difficulty}
-                  onChange={(e) => setDifficulty(e.target.value)}
+                  onChange={(event) => setDifficulty(event.target.value)}
+                  disabled={loading}
                 >
-                  <option className="bg-gray-800" value="Easy">🟢 Easy — {QUESTION_COUNTS.Easy} Qs</option>
-                  <option className="bg-gray-800" value="Medium">🟡 Medium — {QUESTION_COUNTS.Medium} Qs</option>
-                  <option className="bg-gray-800" value="Hard">🔴 Hard — {QUESTION_COUNTS.Hard} Qs</option>
+                  <option className="bg-gray-800" value="Easy">
+                    🟢 Easy — {QUESTION_COUNTS.Easy} Qs
+                  </option>
+                  <option className="bg-gray-800" value="Medium">
+                    🟡 Medium — {QUESTION_COUNTS.Medium} Qs
+                  </option>
+                  <option className="bg-gray-800" value="Hard">
+                    🔴 Hard — {QUESTION_COUNTS.Hard} Qs
+                  </option>
                 </select>
               </div>
 
-              {/* Info Card */}
-              <div className="p-4 rounded-xl bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-400/20 text-sm">
-                <p className="text-white/80 font-semibold">⏰ Interview Time Limits:</p>
+              <div className="rounded-xl border border-purple-400/20 bg-gradient-to-r from-purple-500/10 to-blue-500/10 p-4 text-sm">
+                <p className="font-semibold text-white/80">
+                  ⏰ Interview Time Limits:
+                </p>
                 <div className="mt-2 flex flex-wrap gap-4 text-white/60">
-                  <span>🟢 Easy: 30 min ({QUESTION_COUNTS.Easy} Qs)</span>
-                  <span>🟡 Medium: 45 min ({QUESTION_COUNTS.Medium} Qs)</span>
-                  <span>🔴 Hard: 60 min ({QUESTION_COUNTS.Hard} Qs)</span>
+                  <span>🟢 Easy: 30 min (20 Qs)</span>
+                  <span>🟡 Medium: 45 min (30 Qs)</span>
+                  <span>🔴 Hard: 60 min (40 Qs)</span>
                 </div>
+                <p className="mt-2 text-white/50">
+                  You can enter any subject or job role; a predefined category is not required.
+                </p>
               </div>
 
               <button
-                onClick={() => startInterview(0)}
+                onClick={startInterview}
                 disabled={loading}
-                className="w-full py-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold rounded-xl hover:shadow-lg hover:shadow-purple-600/30 transition-all disabled:opacity-50 text-lg"
+                className="w-full rounded-xl bg-gradient-to-r from-purple-600 to-blue-600 py-4 text-lg font-bold text-white transition-all hover:shadow-lg hover:shadow-purple-600/30 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {loading ? "⏳ Preparing..." : "🚀 Start Interview"}
               </button>
 
               {loading && (
                 <div className="text-center">
-                  <p className="text-purple-300 text-sm text-center animate-pulse">
-                    {statusMessage || `🤖 AI ${difficulty} questions bana raha hai for ${jobRole}...`}
+                  <p className="animate-pulse text-center text-sm text-purple-300">
+                    {statusMessage ||
+                      `AI ${difficulty} questions bana raha hai for ${jobRole}...`}
                   </p>
                   <div className="mt-3 flex justify-center gap-1">
-                    <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></div>
-                    <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></div>
-                    <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></div>
+                    {[0, 150, 300].map((delay) => (
+                      <div
+                        key={delay}
+                        className="h-2 w-2 animate-bounce rounded-full bg-purple-400"
+                        style={{ animationDelay: `${delay}ms` }}
+                      />
+                    ))}
                   </div>
                 </div>
+              )}
+
+              {!loading && statusMessage && (
+                <p className="text-center text-sm text-amber-300">
+                  {statusMessage}
+                </p>
               )}
             </div>
           </div>
         ) : !finished ? (
           <>
-            {/* QUESTION NUMBER NAVIGATION */}
-            <div className="flex flex-wrap gap-2 mb-6">
-              {questions.map((q, i) => (
+            <div className="mb-6 flex flex-wrap gap-2">
+              {questions.map((question, index) => (
                 <button
-                  key={i}
-                  onClick={() => setCurrent(i)}
-                  className={`w-9 h-9 rounded-lg text-xs font-bold transition-all ${
-                    i === current
-                      ? "bg-gradient-to-br from-purple-500 to-blue-500 text-white scale-110 shadow-lg"
-                      : answers[i]
-                      ? "bg-green-500/30 text-green-300 border border-green-400/30"
-                      : "bg-white/10 text-white/50 border border-white/10 hover:bg-white/20"
+                  key={index}
+                  onClick={() => setCurrent(index)}
+                  className={`h-9 w-9 rounded-lg text-xs font-bold transition-all ${
+                    index === current
+                      ? "scale-110 bg-gradient-to-br from-purple-500 to-blue-500 text-white shadow-lg"
+                      : answers[index]
+                      ? "border border-green-400/30 bg-green-500/30 text-green-300"
+                      : "border border-white/10 bg-white/10 text-white/50 hover:bg-white/20"
                   }`}
                 >
-                  {i + 1}
+                  {index + 1}
                 </button>
               ))}
             </div>
 
-            {/* TIMER + PROGRESS + QUESTION */}
-            <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 mb-6">
+            <div className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-white/50 text-sm">
+                    <span className="text-sm text-white/50">
                       Question {current + 1}/{questions.length}
                     </span>
-                    {confidence[current] && (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30">
+                    {confidence[current] !== undefined && (
+                      <span className="rounded-full border border-blue-400/30 bg-blue-500/20 px-2 py-0.5 text-xs text-blue-300">
                         Confidence: {confidence[current]}%
                       </span>
                     )}
                   </div>
-                  <h2 className="text-white font-bold text-xl mt-1 leading-relaxed">
+                  <h2 className="mt-1 text-xl font-bold leading-relaxed text-white">
                     {questions[current]?.question}
                   </h2>
+
                   {questions[current]?.codeSnippet && (
-                    <pre className="mt-3 p-4 bg-gray-900/80 rounded-xl border border-white/10 overflow-x-auto">
-                      <code className="text-sm text-green-300 font-mono">{questions[current].codeSnippet}</code>
+                    <pre className="mt-3 overflow-x-auto rounded-xl border border-white/10 bg-gray-900/80 p-4">
+                      <code className="font-mono text-sm text-green-300">
+                        {questions[current].codeSnippet}
+                      </code>
                     </pre>
                   )}
                 </div>
-                <div className={`text-right text-2xl font-mono font-bold shrink-0 ${timerColor}`}>
+
+                <div className={`shrink-0 text-right font-mono text-2xl font-bold ${timerColor}`}>
                   ⏱ {formatTime(timeLeft)}
                 </div>
               </div>
 
-              {/* Progress Bar */}
               <div className="mt-4">
-                <div className="flex justify-between text-xs text-white/40 mb-1">
+                <div className="mb-1 flex justify-between text-xs text-white/40">
                   <span>Progress</span>
-                  <span>{Math.round(((current + 1) / questions.length) * 100)}%</span>
+                  <span>
+                    {Math.round(((current + 1) / questions.length) * 100)}%
+                  </span>
                 </div>
-                <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
                   <div
-                    className="h-full bg-gradient-to-r from-purple-500 to-blue-500 rounded-full transition-all duration-300"
-                    style={{ width: `${((current + 1) / questions.length) * 100}%` }}
+                    className="h-full rounded-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-300"
+                    style={{
+                      width: `${((current + 1) / questions.length) * 100}%`,
+                    }}
                   />
                 </div>
               </div>
 
-              <div className="mt-3 text-sm text-white/40 flex flex-wrap items-center gap-3">
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-white/40">
                 <span>✅ {Object.keys(answers).length} answered</span>
                 <span>⏭️ {actualSkippedCount} skipped</span>
-                {voiceNotes[current] && <span className="text-purple-300">🎤 Voice note recorded</span>}
+                {voiceNotes[current] && (
+                  <span className="text-purple-300">🎤 Voice note recorded</span>
+                )}
               </div>
             </div>
 
-            {/* OPTIONS */}
-            <div className="space-y-3 mb-4">
+            <div className="mb-4 space-y-3">
               {questions[current]?.options?.map((option, index) => {
-                const optText = typeof option === "string" ? option : option.text;
+                const optionText =
+                  typeof option === "string" ? option : option?.text || "";
                 const selected = answers[current] || "";
 
                 return (
                   <button
                     key={index}
                     onClick={() =>
-                      setAnswers((prev) => ({
-                        ...prev,
-                        [current]: optText,
+                      setAnswers((previous) => ({
+                        ...previous,
+                        [current]: optionText,
                       }))
                     }
-                    className={`w-full text-left p-4 rounded-xl border text-white font-medium transition-all ${
-                      selected === optText
-                        ? "bg-gradient-to-r from-purple-600/40 to-blue-600/40 border-purple-400/60 shadow-lg"
-                        : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/30"
+                    className={`w-full rounded-xl border p-4 text-left font-medium text-white transition-all ${
+                      selected === optionText
+                        ? "border-purple-400/60 bg-gradient-to-r from-purple-600/40 to-blue-600/40 shadow-lg"
+                        : "border-white/10 bg-white/5 hover:border-white/30 hover:bg-white/10"
                     }`}
                   >
                     <div className="flex items-center gap-3">
                       <div
-                        className={`w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold ${
-                          selected === optText
+                        className={`flex h-6 w-6 items-center justify-center rounded-full border-2 text-xs font-bold ${
+                          selected === optionText
                             ? "border-purple-400 bg-purple-500/30"
                             : "border-white/30"
                         }`}
                       >
                         {String.fromCharCode(65 + index)}
                       </div>
-                      <span className="flex-1">{optText}</span>
-                      {selected === optText && (
-                        <span className="ml-auto text-purple-300 text-sm">✓ Selected</span>
+                      <span className="flex-1">{optionText}</span>
+                      {selected === optionText && (
+                        <span className="ml-auto text-sm text-purple-300">
+                          ✓ Selected
+                        </span>
                       )}
                     </div>
                   </button>
@@ -596,25 +736,25 @@ function Interview() {
               })}
             </div>
 
-            {/* VOICE RECORDING + CONFIDENCE */}
-            <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-4 mb-6">
+            <div className="mb-6 rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
               <div className="flex flex-wrap items-center gap-4">
                 <div className="flex items-center gap-2">
                   {recording && recordingFor === current ? (
                     <button
                       onClick={stopRecording}
-                      className="px-4 py-2 bg-red-500/20 text-red-300 border border-red-400/30 rounded-xl font-semibold text-sm hover:bg-red-500/30 transition animate-pulse"
+                      className="animate-pulse rounded-xl border border-red-400/30 bg-red-500/20 px-4 py-2 text-sm font-semibold text-red-300 hover:bg-red-500/30"
                     >
                       ⏹️ Stop Recording
                     </button>
                   ) : (
                     <button
                       onClick={() => startRecording(current)}
-                      className="px-4 py-2 bg-white/10 text-white/70 border border-white/10 rounded-xl font-semibold text-sm hover:bg-white/20 transition"
+                      className="rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-sm font-semibold text-white/70 transition hover:bg-white/20"
                     >
                       🎤 {voiceNotes[current] ? "🔁 Re-record" : "Record Voice Note"}
                     </button>
                   )}
+
                   {voiceNotes[current] && (
                     <audio controls className="h-8 w-48">
                       <source src={voiceNotes[current]} type="audio/webm" />
@@ -622,21 +762,26 @@ function Interview() {
                   )}
                 </div>
 
-                <div className="flex items-center gap-3 flex-1 min-w-[200px]">
-                  <span className="text-white/50 text-xs shrink-0">Confidence:</span>
+                <div className="flex min-w-[200px] flex-1 items-center gap-3">
+                  <span className="shrink-0 text-xs text-white/50">
+                    Confidence:
+                  </span>
                   <input
                     type="range"
                     min="0"
                     max="100"
-                    value={confidence[current] || 50}
-                    onChange={(e) => updateConfidence(current, parseInt(e.target.value))}
-                    className="w-full h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                    value={confidence[current] ?? 50}
+                    onChange={(event) =>
+                      updateConfidence(current, Number(event.target.value))
+                    }
+                    className="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-white/20 accent-purple-500"
                   />
-                  <span className="text-white font-bold text-sm w-10 text-right">
-                    {confidence[current] || 50}%
+                  <span className="w-10 text-right text-sm font-bold text-white">
+                    {confidence[current] ?? 50}%
                   </span>
                 </div>
               </div>
+
               {feedback[current] && (
                 <div className="mt-2 text-xs text-purple-300/70">
                   💬 {feedback[current]}
@@ -644,173 +789,220 @@ function Interview() {
               )}
             </div>
 
-            {/* NAVIGATION BUTTONS */}
             <div className="flex gap-3">
               <button
                 onClick={goPrev}
                 disabled={current === 0}
-                className="px-6 py-3 bg-white/10 text-white rounded-xl border border-white/10 hover:bg-white/20 disabled:opacity-30 font-semibold transition"
+                className="rounded-xl border border-white/10 bg-white/10 px-6 py-3 font-semibold text-white transition hover:bg-white/20 disabled:opacity-30"
               >
                 ← Previous
               </button>
               <button
                 onClick={skipQuestion}
-                className="px-6 py-3 bg-yellow-500/20 text-yellow-300 rounded-xl border border-yellow-400/30 hover:bg-yellow-500/30 font-semibold transition"
+                className="rounded-xl border border-yellow-400/30 bg-yellow-500/20 px-6 py-3 font-semibold text-yellow-300 transition hover:bg-yellow-500/30"
               >
                 ⏭️ Skip
               </button>
               <button
                 onClick={submitAnswer}
-                className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:shadow-lg hover:shadow-green-600/30 font-bold transition"
+                className="flex-1 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 px-6 py-3 font-bold text-white transition hover:shadow-lg hover:shadow-green-600/30"
               >
-                {current === questions.length - 1 ? "🏁 Finish Interview" : "✅ Submit & Next"}
+                {current === questions.length - 1
+                  ? "🏁 Finish Interview"
+                  : "✅ Submit & Next"}
               </button>
             </div>
           </>
         ) : (
           <>
-            {/* RESULTS SECTION */}
             {timeUp && (
-              <div className="mb-4 p-4 rounded-xl bg-red-500/20 border border-red-400/30 text-red-300 font-semibold text-center">
+              <div className="mb-4 rounded-xl border border-red-400/30 bg-red-500/20 p-4 text-center font-semibold text-red-300">
                 ⏰ Time's up! Auto-submitted.
               </div>
             )}
 
             {saved && (
-              <div className="mb-4 p-4 rounded-xl bg-green-500/20 border border-green-400/30 text-green-300 font-semibold text-center">
+              <div className="mb-4 rounded-xl border border-green-400/30 bg-green-500/20 p-4 text-center font-semibold text-green-300">
                 ✅ Interview result saved successfully! Check your history.
               </div>
             )}
 
-            {/* Hero Score Card */}
-            <div className="bg-gradient-to-br from-purple-600 via-blue-600 to-indigo-700 rounded-2xl p-8 shadow-2xl border border-white/20 mb-6">
-              <div className="flex flex-col md:flex-row items-center gap-8">
-                <div className="relative w-36 h-36 shrink-0">
-                  <svg className="w-36 h-36 transform -rotate-90" viewBox="0 0 120 120">
-                    <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="8" />
+            <div className="mb-6 rounded-2xl border border-white/20 bg-gradient-to-br from-purple-600 via-blue-600 to-indigo-700 p-8 shadow-2xl">
+              <div className="flex flex-col items-center gap-8 md:flex-row">
+                <div className="relative h-36 w-36 shrink-0">
+                  <svg
+                    className="h-36 w-36 -rotate-90 transform"
+                    viewBox="0 0 120 120"
+                  >
                     <circle
-                      cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="8"
+                      cx="60"
+                      cy="60"
+                      r="52"
+                      fill="none"
+                      stroke="rgba(255,255,255,0.15)"
+                      strokeWidth="8"
+                    />
+                    <circle
+                      cx="60"
+                      cy="60"
+                      r="52"
+                      fill="none"
+                      stroke="rgba(255,255,255,0.9)"
+                      strokeWidth="8"
                       strokeLinecap="round"
                       strokeDasharray={`${2 * Math.PI * 52}`}
                       strokeDashoffset={2 * Math.PI * 52 * (1 - percentage / 100)}
                     />
-                    <text x="60" y="55" textAnchor="middle" className="fill-white text-2xl font-bold">{percentage}%</text>
-                    <text x="60" y="72" textAnchor="middle" className="fill-white/80 text-xs">{finalScore}/{questions.length}</text>
+                    <text
+                      x="60"
+                      y="55"
+                      textAnchor="middle"
+                      className="fill-white text-2xl font-bold"
+                    >
+                      {percentage}%
+                    </text>
+                    <text
+                      x="60"
+                      y="72"
+                      textAnchor="middle"
+                      className="fill-white/80 text-xs"
+                    >
+                      {finalScore}/{questions.length}
+                    </text>
                   </svg>
                 </div>
 
                 <div className="text-center md:text-left">
-                  <h2 className="text-3xl font-bold text-white">Interview Complete 🎉</h2>
-                  <p className="text-white/80 mt-1 text-lg">{performance}</p>
+                  <h2 className="text-3xl font-bold text-white">
+                    Interview Complete 🎉
+                  </h2>
+                  <p className="mt-1 text-lg text-white/80">{performance}</p>
 
-                  <div className="flex flex-wrap gap-3 mt-4 justify-center md:justify-start">
-                    <div className="px-4 py-2 rounded-xl bg-green-500/20 border border-green-400/30 text-center">
-                      <div className="text-green-300 text-xl font-bold">{finalScore}</div>
-                      <div className="text-green-200 text-xs">✅ Correct</div>
+                  <div className="mt-4 flex flex-wrap justify-center gap-3 md:justify-start">
+                    <div className="rounded-xl border border-green-400/30 bg-green-500/20 px-4 py-2 text-center">
+                      <div className="text-xl font-bold text-green-300">
+                        {finalScore}
+                      </div>
+                      <div className="text-xs text-green-200">✅ Correct</div>
                     </div>
-                    <div className="px-4 py-2 rounded-xl bg-red-500/20 border border-red-400/30 text-center">
-                      <div className="text-red-300 text-xl font-bold">{actualWrongCount}</div>
-                      <div className="text-red-200 text-xs">❌ Wrong</div>
+                    <div className="rounded-xl border border-red-400/30 bg-red-500/20 px-4 py-2 text-center">
+                      <div className="text-xl font-bold text-red-300">
+                        {actualWrongCount}
+                      </div>
+                      <div className="text-xs text-red-200">❌ Wrong</div>
                     </div>
-                    <div className="px-4 py-2 rounded-xl bg-yellow-500/20 border border-yellow-400/30 text-center">
-                      <div className="text-yellow-300 text-xl font-bold">{actualSkippedCount}</div>
-                      <div className="text-yellow-200 text-xs">⏭️ Skipped</div>
+                    <div className="rounded-xl border border-yellow-400/30 bg-yellow-500/20 px-4 py-2 text-center">
+                      <div className="text-xl font-bold text-yellow-300">
+                        {actualSkippedCount}
+                      </div>
+                      <div className="text-xs text-yellow-200">⏭️ Skipped</div>
                     </div>
-                    {Object.values(confidence).length > 0 && (
-                      <div className="px-4 py-2 rounded-xl bg-blue-500/20 border border-blue-400/30 text-center">
-                        <div className="text-blue-300 text-xl font-bold">
-                          {Math.round(Object.values(confidence).reduce((a, b) => a + b, 0) / Object.values(confidence).length)}%
+
+                    {Object.keys(confidence).length > 0 && (
+                      <div className="rounded-xl border border-blue-400/30 bg-blue-500/20 px-4 py-2 text-center">
+                        <div className="text-xl font-bold text-blue-300">
+                          {Math.round(
+                            Object.values(confidence).reduce(
+                              (sum, value) => sum + value,
+                              0
+                            ) / Object.values(confidence).length
+                          )}
+                          %
                         </div>
-                        <div className="text-blue-200 text-xs">🎯 Avg. Confidence</div>
+                        <div className="text-xs text-blue-200">
+                          🎯 Avg. Confidence
+                        </div>
                       </div>
                     )}
                   </div>
 
-                  <p className="mt-3 text-white/40 text-sm">
+                  <p className="mt-3 text-sm text-white/40">
                     {jobRole} • {experience} • {difficulty}
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* Filter Tabs */}
-            <div className="flex flex-wrap gap-2 mb-6">
-              {filters.map((f) => (
+            <div className="mb-6 flex flex-wrap gap-2">
+              {filters.map((filter) => (
                 <button
-                  key={f.key}
-                  onClick={() => setReviewFilter(f.key)}
-                  className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 ${
-                    reviewFilter === f.key
-                      ? "bg-white text-gray-900 shadow-lg scale-105"
-                      : "bg-white/10 text-white/70 hover:bg-white/20 border border-white/10"
+                  key={filter.key}
+                  onClick={() => setReviewFilter(filter.key)}
+                  className={`rounded-xl px-5 py-2.5 text-sm font-bold transition-all duration-200 ${
+                    reviewFilter === filter.key
+                      ? "scale-105 bg-white text-gray-900 shadow-lg"
+                      : "border border-white/10 bg-white/10 text-white/70 hover:bg-white/20"
                   }`}
                 >
-                  {f.label} ({f.count})
+                  {filter.label} ({filter.count})
                 </button>
               ))}
             </div>
 
-            {/* Questions Review */}
             <div className="space-y-4">
               {filteredIndexes.length === 0 && (
-                <div className="text-center py-16 text-white/30">
-                  <div className="text-6xl mb-4">📭</div>
+                <div className="py-16 text-center text-white/30">
+                  <div className="mb-4 text-6xl">📭</div>
                   <p>No questions in this filter</p>
                 </div>
               )}
 
-              {filteredIndexes.map((idx) => {
-                const q = questions[idx];
-                const userAns = answers[idx] || "";
-                const skipped = !answers[idx] && answers[idx] !== 0;
-                const isCorrect = userAns === q.correctAnswer;
-                const generalExplanation = getGeneralExplanation(q);
-                const hasOptionExp = anyOptionHasExplanation(q);
-                const qConfidence = confidence[idx];
-                const qFeedback = feedback[idx];
-                const qVoiceNote = voiceNotes[idx];
+              {filteredIndexes.map((index) => {
+                const question = questions[index];
+                const userAnswer = answers[index] || "";
+                const skipped = !answers[index];
+                const correct = userAnswer === question.correctAnswer;
+                const generalExplanation = getGeneralExplanation(question);
+                const hasOptionExplanation =
+                  anyOptionHasExplanation(question);
 
                 return (
                   <div
-                    key={idx}
+                    key={index}
                     className={`rounded-xl border-2 p-5 transition-all ${
                       skipped
                         ? "border-yellow-500/30 bg-yellow-500/5"
-                        : isCorrect
+                        : correct
                         ? "border-green-500/30 bg-green-500/5"
                         : "border-red-500/30 bg-red-500/5"
                     }`}
                   >
-                    {/* Question & Status */}
                     <div className="flex items-start justify-between gap-3">
-                      <h3 className="text-white font-bold text-lg">Q{idx + 1}. {q.question}</h3>
+                      <h3 className="text-lg font-bold text-white">
+                        Q{index + 1}. {question.question}
+                      </h3>
                       <span
-                        className={`shrink-0 px-3 py-1 rounded-full text-xs font-bold ${
+                        className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
                           skipped
                             ? "bg-yellow-500/80 text-white"
-                            : isCorrect
+                            : correct
                             ? "bg-green-500/80 text-white"
                             : "bg-red-500/80 text-white"
                         }`}
                       >
-                        {skipped ? "⏭️ Skipped" : isCorrect ? "✅ Correct" : "❌ Wrong"}
+                        {skipped
+                          ? "⏭️ Skipped"
+                          : correct
+                          ? "✅ Correct"
+                          : "❌ Wrong"}
                       </span>
                     </div>
 
-                    {(qConfidence || qVoiceNote) && (
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {qConfidence && (
-                          <span className="text-xs px-2 py-1 rounded-full bg-blue-500/15 text-blue-300 border border-blue-400/30">
-                            🎯 Confidence: {qConfidence}%
+                    {(confidence[index] !== undefined ||
+                      voiceNotes[index]) && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {confidence[index] !== undefined && (
+                          <span className="rounded-full border border-blue-400/30 bg-blue-500/15 px-2 py-1 text-xs text-blue-300">
+                            🎯 Confidence: {confidence[index]}%
                           </span>
                         )}
-                        {qFeedback && (
-                          <span className="text-xs px-2 py-1 rounded-full bg-purple-500/15 text-purple-300 border border-purple-400/30">
-                            💬 {qFeedback}
+                        {feedback[index] && (
+                          <span className="rounded-full border border-purple-400/30 bg-purple-500/15 px-2 py-1 text-xs text-purple-300">
+                            💬 {feedback[index]}
                           </span>
                         )}
-                        {qVoiceNote && (
-                          <span className="text-xs px-2 py-1 rounded-full bg-teal-500/15 text-teal-300 border border-teal-400/30">
+                        {voiceNotes[index] && (
+                          <span className="rounded-full border border-teal-400/30 bg-teal-500/15 px-2 py-1 text-xs text-teal-300">
                             🎤 Voice note attached
                           </span>
                         )}
@@ -818,39 +1010,56 @@ function Interview() {
                     )}
 
                     <div className="mt-4 space-y-2">
-                      {q.options?.map((opt, oi) => {
-                        const optText = typeof opt === "string" ? opt : opt.text;
-                        const optCorrect = optText === q.correctAnswer;
-                        const optPick = optText === userAns;
-                        const optExplanation = typeof opt === "object" ? getOptionExplanation(opt) : "";
+                      {question.options?.map((option, optionIndex) => {
+                        const optionText =
+                          typeof option === "string"
+                            ? option
+                            : option?.text || "";
+                        const isCorrectOption =
+                          optionText === question.correctAnswer;
+                        const isUserOption = optionText === userAnswer;
+                        const optionExplanation =
+                          typeof option === "object"
+                            ? getOptionExplanation(option)
+                            : "";
 
-                        let bg = "bg-white/5 border-white/10";
-                        let statusLabel = "";
-                        let statusColor = "";
+                        let background = "bg-white/5 border-white/10";
+                        let label = "";
+                        let labelColor = "";
 
-                        if (optCorrect) {
-                          bg = "bg-green-500/15 border-green-400/40";
-                          statusLabel = "✅ Correct Answer";
-                          statusColor = "text-green-300";
-                        } else if (optPick) {
-                          bg = "bg-red-500/15 border-red-400/40";
-                          statusLabel = "❌ Your Answer";
-                          statusColor = "text-red-300";
+                        if (isCorrectOption) {
+                          background =
+                            "bg-green-500/15 border-green-400/40";
+                          label = "✅ Correct Answer";
+                          labelColor = "text-green-300";
+                        } else if (isUserOption) {
+                          background = "bg-red-500/15 border-red-400/40";
+                          label = "❌ Your Answer";
+                          labelColor = "text-red-300";
                         }
 
                         return (
-                          <div key={oi} className={`rounded-xl border ${bg} p-3 transition-all`}>
+                          <div
+                            key={optionIndex}
+                            className={`rounded-xl border p-3 transition-all ${background}`}
+                          >
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex-1">
-                                <span className="text-white/90 font-medium">{optText}</span>
-                                {optExplanation && (
-                                  <div className="mt-2 text-xs text-blue-300 border-t border-white/10 pt-2 leading-relaxed">
-                                    {optExplanation}
+                                <span className="font-medium text-white/90">
+                                  {optionText}
+                                </span>
+                                {optionExplanation && (
+                                  <div className="mt-2 border-t border-white/10 pt-2 text-xs leading-relaxed text-blue-300">
+                                    {optionExplanation}
                                   </div>
                                 )}
                               </div>
-                              {statusLabel && (
-                                <span className={`shrink-0 text-xs font-bold ${statusColor}`}>{statusLabel}</span>
+                              {label && (
+                                <span
+                                  className={`shrink-0 text-xs font-bold ${labelColor}`}
+                                >
+                                  {label}
+                                </span>
                               )}
                             </div>
                           </div>
@@ -858,21 +1067,25 @@ function Interview() {
                       })}
                     </div>
 
-                    {generalExplanation && !hasOptionExp && (
-                      <div className="mt-3 p-4 rounded-xl bg-blue-500/10 border border-blue-400/20 text-sm text-blue-200 leading-relaxed">
+                    {generalExplanation && !hasOptionExplanation && (
+                      <div className="mt-3 rounded-xl border border-blue-400/20 bg-blue-500/10 p-4 text-sm leading-relaxed text-blue-200">
                         <b>📖 Additional Info:</b> {generalExplanation}
                       </div>
                     )}
-                    {generalExplanation && hasOptionExp && (
-                      <div className="mt-2 text-xs text-blue-300/60 text-right">
+
+                    {generalExplanation && hasOptionExplanation && (
+                      <div className="mt-2 text-right text-xs text-blue-300/60">
                         📖 See option explanations above
                       </div>
                     )}
 
-                    {qVoiceNote && (
+                    {voiceNotes[index] && (
                       <div className="mt-3">
-                        <audio controls className="w-full h-10">
-                          <source src={qVoiceNote} type="audio/webm" />
+                        <audio controls className="h-10 w-full">
+                          <source
+                            src={voiceNotes[index]}
+                            type="audio/webm"
+                          />
                         </audio>
                       </div>
                     )}
@@ -881,24 +1094,10 @@ function Interview() {
               })}
             </div>
 
-            {/* Action Buttons */}
-            <div className="mt-8 flex flex-col sm:flex-row gap-3">
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <button
-                onClick={() => {
-                  setStarted(false);
-                  setFinished(false);
-                  setQuestions([]);
-                  setAnswers({});
-                  setCurrent(0);
-                  setTimeLeft(0);
-                  setTimeUp(false);
-                  setSaved(false);
-                  setSavedResultId(null);
-                  setVoiceNotes({});
-                  setConfidence({});
-                  setFeedback({});
-                }}
-                className="flex-1 px-6 py-3 bg-white/10 text-white rounded-xl border border-white/20 hover:bg-white/20 font-bold transition"
+                onClick={resetInterview}
+                className="flex-1 rounded-xl border border-white/20 bg-white/10 px-6 py-3 font-bold text-white transition hover:bg-white/20"
               >
                 🔄 New Interview
               </button>
@@ -906,15 +1105,17 @@ function Interview() {
               <button
                 onClick={saveResult}
                 disabled={saving || saved}
-                className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl font-bold shadow-lg hover:shadow-purple-600/30 transition disabled:opacity-50"
+                className="flex-1 rounded-xl bg-gradient-to-r from-purple-600 to-blue-600 px-6 py-3 font-bold text-white shadow-lg transition hover:shadow-purple-600/30 disabled:opacity-50"
               >
                 {saving ? "⏳ Saving..." : saved ? "✅ Saved" : "💾 Save Result"}
               </button>
 
               {saved && savedResultId && (
                 <button
-                  onClick={() => navigate(`/history-detail/${savedResultId}`)}
-                  className="flex-1 px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-bold shadow-lg hover:shadow-emerald-600/30 transition"
+                  onClick={() =>
+                    navigate(`/history-detail/${savedResultId}`)
+                  }
+                  className="flex-1 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-3 font-bold text-white shadow-lg transition hover:shadow-emerald-600/30"
                 >
                   📋 View in History
                 </button>
