@@ -1,3 +1,4 @@
+
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { t, toggleLang } from "../../i18n";
@@ -13,21 +14,35 @@ function Navbar() {
     /iphone|ipad|ipod/i.test(navigator.userAgent) ||
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
+  const isStandalone =
+    window.matchMedia("(display-mode: standalone)").matches ||
+    window.navigator.standalone === true;
+
   useEffect(() => {
-    const showBtn = () => setShowInstall(true);
+    const updateInstallButton = () => {
+      setShowInstall(
+        !(
+          window.matchMedia("(display-mode: standalone)").matches ||
+          window.navigator.standalone === true
+        )
+      );
+    };
 
-    window.addEventListener("install-ready", showBtn);
+    const handleInstalled = () => setShowInstall(false);
+    const handleReady = () => updateInstallButton();
 
-    if (getInstallPrompt()) showBtn();
-    if (isIOS) setShowInstall(true);
+    updateInstallButton();
 
-    const hideBtn = () => setShowInstall(false);
+    window.addEventListener("install-ready", handleReady);
+    window.addEventListener("appinstalled", handleInstalled);
 
-    window.addEventListener("appinstalled", hideBtn);
+    const mediaQuery = window.matchMedia("(display-mode: standalone)");
+    mediaQuery.addEventListener?.("change", updateInstallButton);
 
     return () => {
-      window.removeEventListener("install-ready", showBtn);
-      window.removeEventListener("appinstalled", hideBtn);
+      window.removeEventListener("install-ready", handleReady);
+      window.removeEventListener("appinstalled", handleInstalled);
+      mediaQuery.removeEventListener?.("change", updateInstallButton);
     };
   }, []);
 
@@ -38,12 +53,38 @@ function Navbar() {
   };
 
   const handleInstall = async () => {
-    if (isIOS) {
-      alert('iPhone pe: Share (📤) button → "Add to Home Screen"');
+    if (isStandalone) {
+      alert("AI Interview app is already installed.");
+      setShowInstall(false);
       return;
     }
 
-    await installApp();
+    if (isIOS) {
+      alert(
+        'iPhone/iPad: Safari mein Share (📤) button dabao, phir "Add to Home Screen" select karo.'
+      );
+      return;
+    }
+
+    const prompt = getInstallPrompt();
+
+    if (prompt) {
+      const result = await installApp();
+
+      if (result?.ok) {
+        setShowInstall(false);
+      } else if (result?.reason === "no-prompt") {
+        alert(
+          'Chrome ke ⋮ menu mein "Cast, save and share" → "Install page as app" ya "Install AI Interview" option check karo.'
+        );
+      }
+
+      return;
+    }
+
+    alert(
+      'Chrome ke ⋮ menu mein "Cast, save and share" → "Install page as app" ya "Install AI Interview" option check karo. Agar option nahi hai, page reload karo aur HTTPS, manifest aur app icons check karo.'
+    );
   };
 
   return (
@@ -53,19 +94,18 @@ function Navbar() {
       </Link>
 
       <div className="flex gap-6 items-center flex-wrap">
-
-        {/* 📲 Install App */}
         {showInstall && (
           <button
+            type="button"
             onClick={handleInstall}
-            className="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold"
+            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold"
           >
             📲 Install App
           </button>
         )}
 
-        {/* 📚 Learn More */}
         <button
+          type="button"
           onClick={() =>
             window.dispatchEvent(new CustomEvent("show-onboarding"))
           }
@@ -74,82 +114,53 @@ function Navbar() {
           📚 Learn More
         </button>
 
-        {/* 🌐 Language */}
         <button
+          type="button"
           onClick={() => setLang(toggleLang())}
           className="text-gray-700 hover:text-blue-600"
         >
           🌐 {lang === "hi" ? "English" : "हिंदी"}
         </button>
 
-        {/* 🏠 Home */}
         <Link to="/" className="text-gray-700 hover:text-blue-600">
           Home
         </Link>
 
-        <Link
-          to="/ppt"
-          className="text-gray-700 hover:text-blue-600"
-        >
+        <Link to="/ppt" className="text-gray-700 hover:text-blue-600">
           📊 AI PPT
         </Link>
 
-        {/* 📘 Class 11/12 */}
-        <Link
-          to="/class-exam"
-          className="text-gray-700 hover:text-blue-600"
-        >
+        <Link to="/class-exam" className="text-gray-700 hover:text-blue-600">
           📘 Class 11/12
         </Link>
 
         {token ? (
           <>
-            {/* 📊 AI PPT — NEW */}
-            <Link
-              to="/ppt"
-              className="text-gray-700 hover:text-blue-600"
-            >
-              📊 AI PPT
-            </Link>
-
-            {/* 📊 Dashboard */}
-            <Link
-              to="/dashboard"
-              className="text-gray-700 hover:text-blue-600"
-            >
+            <Link to="/dashboard" className="text-gray-700 hover:text-blue-600">
               {t("dashboard")}
             </Link>
 
-            {/* 👤 Profile */}
-            <Link
-              to="/profile"
-              className="text-gray-700 hover:text-blue-600"
-            >
+            <Link to="/profile" className="text-gray-700 hover:text-blue-600">
               {t("profile")}
             </Link>
 
-            {/* 🚪 Logout */}
             <button
+              type="button"
               onClick={logout}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg"
+              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg"
             >
               {t("logout")}
             </button>
           </>
         ) : (
           <>
-            {/* 🔐 Login */}
-            <Link
-              to="/login"
-              className="text-gray-700 hover:text-blue-600"
-            >
+            <Link to="/login" className="text-gray-700 hover:text-blue-600">
               Login
             </Link>
 
-            {/* 📝 Register */}
             <Link
               to="/register"
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg"
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
             >
               Register
             </Link>
