@@ -1,450 +1,268 @@
+
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import API from "../../services/api";
 
 function Register() {
-
   const navigate = useNavigate();
 
-
-  const [formData,setFormData] = useState({
-
-    name:"",
-    email:"",
-    password:""
-
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    password: "",
   });
 
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [verified, setVerified] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
-  const [otp,setOtp] = useState("");
+  const handleChange = (e) => {
+    const { name, value } = e.target;
 
-  const [otpSent,setOtpSent] = useState(false);
-
-  const [verified,setVerified] = useState(false);
-
-  const [loading,setLoading] = useState(false);
-
-
-
-  const handleChange=(e)=>{
-
-    setFormData({
-
-      ...formData,
-
-      [e.target.name]:e.target.value
-
-    });
-
+    setFormData((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
   };
-
-
-
-
 
   // SEND OTP
+  const sendOTP = async () => {
+    const email = formData.email.trim();
 
-  const sendOTP = async()=>{
+    if (!email) {
+      alert("Please enter your email address first.");
+      return;
+    }
 
-
-    try{
-
-
+    try {
       setLoading(true);
 
+      const res = await API.post("/api/auth/send-otp", {
+        email,
+      });
 
-      const res = await API.post(
-
-        "/auth/send-otp",
-
-        {
-          email:formData.email
-        }
-
-      );
-
-
-      alert(res.data.message);
-
+      alert(res.data?.message || "OTP request completed.");
       setOtpSent(true);
-
-
-
-    }
-    catch(error){
-
+      setOtp("");
+      setVerified(false);
+    } catch (error) {
+      console.error("SEND OTP ERROR:", error);
 
       alert(
-
         error.response?.data?.message ||
-        "OTP Send Failed"
-
+          "OTP send failed. Please try again."
       );
-
-
-    }
-    finally{
-
+    } finally {
       setLoading(false);
-
     }
-
-
   };
-
-
-
-
-
-
-
 
   // VERIFY OTP
+  const verifyOTP = async () => {
+    const email = formData.email.trim();
 
-  const verifyOTP = async()=>{
-
-
-    try{
-
-
-      const res = await API.post(
-
-        "/auth/verify-otp",
-
-        {
-
-          email:formData.email,
-
-          otp
-
-        }
-
-      );
-
-
-
-      alert(res.data.message);
-
-
-      setVerified(true);
-
-
-
+    if (!email) {
+      alert("Please enter your email address first.");
+      return;
     }
-    catch(error){
 
+    if (!otp.trim()) {
+      alert("Please enter the OTP.");
+      return;
+    }
+
+    try {
+      setVerifying(true);
+
+      const res = await API.post("/api/auth/verify-otp", {
+        email,
+        otp: otp.trim(),
+      });
+
+      alert(res.data?.message || "Email verification successful.");
+      setVerified(true);
+    } catch (error) {
+      console.error("VERIFY OTP ERROR:", error);
 
       alert(
-
         error.response?.data?.message ||
-        "OTP Verification Failed"
-
+          "OTP verification failed. Please check the OTP."
       );
-
-
+    } finally {
+      setVerifying(false);
     }
-
-
   };
-
-
-
-
-
-
-
-
 
   // CREATE ACCOUNT
-
-  const handleSubmit=async(e)=>{
-
-
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
-
-    if(!verified){
-
-      return alert(
-        "Please verify email first"
-      );
-
+    if (!verified) {
+      alert("Please verify your email first.");
+      return;
     }
 
+    if (!formData.name.trim()) {
+      alert("Please enter your full name.");
+      return;
+    }
 
-  console.log("FORM DATA SEND:", formData);
+    if (!formData.password) {
+      alert("Please enter a password.");
+      return;
+    }
 
-    try{
-
-
+    try {
       setLoading(true);
 
+      const payload = {
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        password: formData.password,
+      };
 
+      console.log("REGISTER REQUEST:", {
+        name: payload.name,
+        email: payload.email,
+      });
 
-      const res = await API.post(
+      const res = await API.post("/api/auth/signup", payload);
 
-        "/auth/signup",
-
-        formData
-
-      );
-
-
-
-      alert(res.data.message);
-
-
-
+      alert(res.data?.message || "Account created successfully.");
       navigate("/login");
-
-
-
-    }
-    catch(error){
-
+    } catch (error) {
+      console.error("REGISTER ERROR:", error);
 
       alert(
-
         error.response?.data?.message ||
-        "Registration Failed"
-
+          "Registration failed. Please try again."
       );
-
-
-    }
-    finally{
-
+    } finally {
       setLoading(false);
-
     }
-
-
-
   };
 
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4 py-8">
+      <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
+        <h1 className="text-3xl font-bold text-center">
+          Create Account
+        </h1>
 
+        <p className="text-center text-gray-500 mt-2">
+          Verify email to continue
+        </p>
 
+        <form
+          onSubmit={handleSubmit}
+          className="mt-8 space-y-4"
+        >
+          <input
+            type="text"
+            name="name"
+            placeholder="Full Name"
+            value={formData.name}
+            onChange={handleChange}
+            autoComplete="name"
+            required
+            className="w-full px-4 py-3 border rounded-lg"
+          />
 
+          <div className="flex gap-2">
+            <input
+              type="email"
+              name="email"
+              placeholder="Email Address"
+              value={formData.email}
+              onChange={handleChange}
+              autoComplete="email"
+              required
+              disabled={verified}
+              className="min-w-0 flex-1 px-4 py-3 border rounded-lg disabled:bg-gray-100"
+            />
 
-return(
+            <button
+              type="button"
+              onClick={sendOTP}
+              disabled={loading || otpSent || verified}
+              className="bg-green-600 text-white px-3 rounded-lg disabled:opacity-60"
+            >
+              {loading
+                ? "Sending..."
+                : otpSent
+                  ? "Sent"
+                  : "Send OTP"}
+            </button>
+          </div>
 
-<div className="min-h-screen flex items-center justify-center bg-gray-100">
+          {otpSent && !verified && (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Enter OTP"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  required
+                  className="min-w-0 flex-1 px-4 py-3 border rounded-lg"
+                />
 
+                <button
+                  type="button"
+                  onClick={verifyOTP}
+                  disabled={verifying || !otp.trim()}
+                  className="bg-blue-600 text-white px-3 rounded-lg disabled:opacity-60"
+                >
+                  {verifying ? "Verifying..." : "Verify"}
+                </button>
+              </div>
 
-<div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
+              <button
+                type="button"
+                onClick={() => {
+                  setOtpSent(false);
+                  setOtp("");
+                }}
+                disabled={loading}
+                className="text-sm text-blue-600 underline disabled:opacity-60"
+              >
+                Change email or resend OTP
+              </button>
+            </div>
+          )}
 
+          {verified && (
+            <p className="text-sm text-green-700">
+              Email verified successfully.
+            </p>
+          )}
 
-<h1 className="text-3xl font-bold text-center">
+          <input
+            type="password"
+            name="password"
+            placeholder="Password"
+            value={formData.password}
+            onChange={handleChange}
+            autoComplete="new-password"
+            required
+            className="w-full px-4 py-3 border rounded-lg"
+          />
 
-Create Account
-
-</h1>
-
-
-
-<p className="text-center text-gray-500 mt-2">
-
-Verify email to continue
-
-</p>
-
-
-
-
-
-<form 
-onSubmit={handleSubmit}
-className="mt-8 space-y-4"
->
-
-
-
-
-<input
-
-type="text"
-
-name="name"
-
-placeholder="Full Name"
-
-value={formData.name}
-
-onChange={handleChange}
-
-required
-
-className="w-full px-4 py-3 border rounded-lg"
-
-/>
-
-
-
-
-
-<div className="flex gap-2">
-
-
-<input
-
-type="email"
-
-name="email"
-
-placeholder="Email Address"
-
-value={formData.email}
-
-onChange={handleChange}
-
-required
-
-disabled={verified}
-
-className="flex-1 px-4 py-3 border rounded-lg"
-
-/>
-
-
-
-
-<button
-
-type="button"
-
-onClick={sendOTP}
-
-disabled={otpSent}
-
-className="bg-green-600 text-white px-3 rounded-lg"
-
->
-
-{
-otpSent ?
-"Sent":
-"OTP"
+          <button
+            type="submit"
+            disabled={loading || !verified}
+            className="w-full bg-blue-600 text-white py-3 rounded-lg disabled:opacity-60"
+          >
+            {loading ? "Creating..." : "Create Account"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
 }
-
-</button>
-
-
-</div>
-
-
-
-
-
-
-
-{
-otpSent && !verified && (
-
-<div className="flex gap-2">
-
-
-<input
-
-type="text"
-
-placeholder="Enter OTP"
-
-value={otp}
-
-onChange={(e)=>setOtp(e.target.value)}
-
-className="flex-1 px-4 py-3 border rounded-lg"
-
-/>
-
-
-<button
-
-type="button"
-
-onClick={verifyOTP}
-
-className="bg-blue-600 text-white px-3 rounded-lg"
-
->
-
-Verify
-
-</button>
-
-
-</div>
-
-
-)
-
-}
-
-
-
-
-
-<input
-
-type="password"
-
-name="password"
-
-placeholder="Password"
-
-value={formData.password}
-
-onChange={handleChange}
-
-required
-
-className="w-full px-4 py-3 border rounded-lg"
-
-/>
-
-
-
-
-
-<button
-
-type="submit"
-
-disabled={loading}
-
-className="w-full bg-blue-600 text-white py-3 rounded-lg"
-
->
-
-{
-
-loading ?
-
-"Creating..." :
-
-"Create Account"
-
-}
-
-
-</button>
-
-
-
-
-</form>
-
-
-</div>
-
-
-</div>
-
-
-);
-
-
-}
-
 
 export default Register;

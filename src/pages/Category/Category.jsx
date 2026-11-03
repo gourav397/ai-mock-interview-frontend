@@ -4,12 +4,23 @@ import API from "../../services/api";
 
 // ⚠️ Ye names backend cron/refreshBanks.js ke ALL_CATEGORIES se EXACT match hone chahiye
 const categories = [
-  "Haryana GK", "General Knowledge", "Current Affairs", "Indian History",
-  "Indian Polity", "Geography", "Science", "Computer", "Python",
-  "Cyber Security", "AI & Machine Learning", "SSC", "UPSC", "Railway",
-  "Banking", "Defence", "Mathematics", "Reasoning", "Hindi", "English",
-  "Haryana History", "Haryana Geography", "Haryana Polity", "Haryana Economy",
-  "Haryana Culture", "Haryana Literature"
+  "Haryana GK", "General Knowledge", "Reasoning", "Current Affairs",
+  "Indian History", "Indian Polity", "Geography", "Science",
+  "Computer", "Python", "Cyber Security", "AI & Machine Learning",
+  "SSC", "UPSC", "Railway", "Banking", "Defence",
+  "General Hindi", "General Science", "Mathematics", "Haryana History", "Haryana Geography",
+  "Haryana Polity", "Haryana Economy", "Haryana Culture & Heritage",
+  "Haryana Environment", "Haryana Literature", "English",
+
+  "HPSC", "HPPSC", "UPPSC", "BPSC", "RPSC", "MPPSC", "PPSC",
+  "UKPSC", "JPSC", "CGPSC", "HTET", "UPTET", "REET", "KVS",
+  "NVS", "DSSSB", "Super TET", "Army Public School (AWES)",
+  "Haryana Police", "Delhi Police", "UP Police", "Rajasthan Police",
+  "Punjab Police", "Bihar Police", "CRPF", "BSF", "CISF", "ITBP",
+  "SSB", "LIC AAO", "LIC ADO", "NIACL AO", "EPFO", "ESIC",
+  "FCI", "India Post GDS", "ISRO", "DRDO", "BARC", "RRB ALP",
+  "CUET", "CSIR NET", "UGC NET", "SET", "NIELIT", "AAI",
+  "FSSAI", "IB ACIO", "Delhi Subordinate Services", "State Cooperative Exams"
 ];
 
 function Category() {
