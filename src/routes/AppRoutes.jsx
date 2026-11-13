@@ -2,6 +2,7 @@ import { Routes, Route } from "react-router-dom";
 import { PageMeta } from "../main"; // 🔥 SEO — har page ka title/description
 import { lazy, Suspense } from 'react';
 const AIInterview = lazy(() => import('../pages/AIInterview'));
+const QuizBattle = lazy(() => import("../pages/QuizBattle/QuizBattle"));
 
 
 // Pages
@@ -45,6 +46,24 @@ function AppRoutes() {
 
         {/* Student */}
         <Route path="/dashboard" element={<Dashboard />} />
+        {/* Private Quiz Battle */}
+<Route
+  path="/quiz-battle"
+  element={
+    <Suspense fallback={<div>Loading Quiz Battle...</div>}>
+      <QuizBattle />
+    </Suspense>
+  }
+/>
+
+<Route
+  path="/quiz-battle/:roomCode"
+  element={
+    <Suspense fallback={<div>Loading Quiz Battle...</div>}>
+      <QuizBattle />
+    </Suspense>
+  }
+/>
         <Route path="/ai-interview" element={
   <Suspense fallback={<div className="min-h-screen bg-gray-900 flex items-center justify-center"><div className="text-purple-400">Loading...</div></div>}>
     <AIInterview />

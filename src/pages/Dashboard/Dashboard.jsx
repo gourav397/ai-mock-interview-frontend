@@ -183,6 +183,14 @@ function Dashboard() {
           <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10">
             <h3 className="text-white font-bold text-lg mb-4">⚡ Quick Actions</h3>
             <div className="space-y-3">
+              <button
+  onClick={() => navigate("/quiz-battle")}
+  className="w-full p-3 bg-gradient-to-r from-cyan-600/30 to-blue-600/30 rounded-xl border border-cyan-400/20 text-white font-semibold flex items-center gap-3 hover:from-cyan-600/50 hover:to-blue-600/50 transition-all"
+>
+  <span className="text-2xl">⚔️</span>
+  <span className="text-left">Private Quiz Battle — Play with Friend</span>
+  <span className="ml-auto text-cyan-300">→</span>
+</button>
               <button onClick={() => navigate("/category")}
                 className="w-full p-3 bg-gradient-to-r from-purple-600/30 to-blue-600/30 rounded-xl border border-purple-400/20 text-white font-semibold flex items-center gap-3 hover:from-purple-600/50 hover:to-blue-600/50 transition-all">
                 <span className="text-2xl">📝</span>
