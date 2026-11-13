@@ -581,6 +581,73 @@ const isWinner = String(winner) === myUserId;
               </div>
             )}
 
+            {Array.isArray(myResult?.answerReview) && (
+  <div className="mt-8">
+    <h2 className="text-2xl font-bold mb-5">
+      📝 Question-wise Answer Review
+    </h2>
+
+    <div className="space-y-4">
+      {myResult.answerReview.map((review, index) => (
+        <div
+          key={index}
+          className="bg-slate-800 border border-slate-700 rounded-xl p-5"
+        >
+          <div className="flex justify-between items-center gap-3 mb-4">
+            <h3 className="font-bold">
+              Question {index + 1}
+            </h3>
+
+            {review.yourAnswer === "" ? (
+              <span className="text-yellow-400 text-sm font-semibold">
+                Skipped
+              </span>
+            ) : review.isCorrect ? (
+              <span className="text-green-400 text-sm font-semibold">
+                ✓ Correct
+              </span>
+            ) : (
+              <span className="text-red-400 text-sm font-semibold">
+                ✗ Wrong
+              </span>
+            )}
+          </div>
+
+          <p className="text-white font-medium mb-4">
+            {getQuestionText(review.question)}
+          </p>
+
+          <div className="space-y-3 text-sm">
+            <div>
+              <p className="text-slate-400 mb-1">Your Answer</p>
+              <p className={review.isCorrect ? "text-green-400" : "text-red-400"}>
+                {getOptionText(review.yourAnswer) || "Not Answered"}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-slate-400 mb-1">Correct Answer</p>
+              <p className="text-green-400 font-semibold">
+                {getOptionText(review.correctAnswer) ||
+                  String(review.correctAnswer ?? "Not available")}
+              </p>
+            </div>
+
+            {review.explanation && (
+              <div className="border-t border-slate-700 pt-3">
+                <p className="text-slate-400 mb-1">Explanation</p>
+                <p className="text-slate-300">
+                  {review.explanation}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
+
             <div className="mt-6 space-y-3">
   {resultList.map((player, index) => (
     <div
