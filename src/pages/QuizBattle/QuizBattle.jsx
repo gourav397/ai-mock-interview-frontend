@@ -313,19 +313,28 @@ function QuizBattle() {
     participant?.user?.email ||
     "Student";
 
-  const getResultForMe = () => {
-    if (!results) return null;
+ const getResultForMe = () => {
+  if (!results) return null;
 
-    if (Array.isArray(results.participants)) {
-      return results.participants.find(
-        (item) =>
-          String(item.user?._id || item.user) ===
-          String(me?.user?._id || me?.user)
-      );
-    }
+  const resultList = Array.isArray(results)
+    ? results
+    : results.participants || [];
 
-    return results.me || results;
-  };
+  const myId = String(me?.user?._id || me?.user || "");
+
+  return resultList.find(
+    (item) =>
+      String(item.user?._id || item.user || "") === myId
+  ) || null;
+};
+
+const resultList = Array.isArray(results)
+  ? results
+  : results?.participants || [];
+
+const winner = battle?.winner;
+const myUserId = String(me?.user?._id || me?.user || "");
+const isWinner = String(winner) === myUserId;
 
   // HOME SCREEN
   if (!roomCode) {
@@ -501,7 +510,6 @@ function QuizBattle() {
   // RESULT SCREEN
   if (results) {
     const myResult = getResultForMe();
-    const winner = results.winner;
 
     return (
       <div className="min-h-screen bg-slate-950 text-white p-5">
@@ -518,32 +526,34 @@ function QuizBattle() {
 
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
             <h2 className="text-xl font-bold mb-5 text-center">
-              {winner?.user
-                ? `${playerName(winner)} Won!`
-                : winner === "draw"
-                ? "Match Draw!"
-                : "Battle Completed"}
+              {winner === "draw"
+  ? "Match Draw!"
+  : isWinner
+  ? "You Won! 🏆"
+  : winner
+  ? "Opponent Won!"
+  : "Battle Completed"}
             </h2>
 
             {myResult && (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-center">
                 <div className="bg-slate-800 rounded-xl p-4">
                   <div className="text-2xl font-bold text-green-400">
-                    {myResult.correct ?? 0}
+                   {myResult.correctQuestions ?? 0}
                   </div>
                   <div className="text-slate-400 text-sm">Correct</div>
                 </div>
 
                 <div className="bg-slate-800 rounded-xl p-4">
                   <div className="text-2xl font-bold text-red-400">
-                    {myResult.wrong ?? 0}
+                  {myResult.wrongQuestions ?? 0}
                   </div>
                   <div className="text-slate-400 text-sm">Wrong</div>
                 </div>
 
                 <div className="bg-slate-800 rounded-xl p-4">
                   <div className="text-2xl font-bold">
-                    {myResult.skipped ?? 0}
+                 {myResult.skippedQuestions ?? 0}
                   </div>
                   <div className="text-slate-400 text-sm">Skipped</div>
                 </div>
@@ -572,18 +582,18 @@ function QuizBattle() {
             )}
 
             <div className="mt-6 space-y-3">
-              {(results.participants || []).map((player, index) => (
-                <div
-                  key={player.user?._id || player.user || index}
-                  className="bg-slate-800 rounded-lg p-4 flex justify-between"
-                >
-                  <span>{playerName(player)}</span>
-                  <span className="font-bold">
-                    {player.score ?? 0} points
-                  </span>
-                </div>
-              ))}
-            </div>
+  {resultList.map((player, index) => (
+    <div
+      key={player.user?._id || player.user || index}
+      className="bg-slate-800 rounded-lg p-4 flex justify-between"
+    >
+      <span>{playerName(player)}</span>
+      <span className="font-bold">
+        {player.score ?? 0} points
+      </span>
+    </div>
+  ))}
+</div>
           </div>
 
           <button
