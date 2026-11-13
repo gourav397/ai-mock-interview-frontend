@@ -702,6 +702,27 @@ function QuizBattle() {
           </div>
         )}
 
+
+{!isStarted && !isSubmitted && (
+  <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-5 mb-5 text-center">
+    <h2 className="text-xl font-bold mb-2">
+      Ready to Start?
+    </h2>
+    <p className="text-slate-400 text-sm mb-4">
+      Start button dabate hi aapka personal timer shuru ho jayega.
+    </p>
+    <button
+      type="button"
+      onClick={startBattle}
+      disabled={loading}
+      className="bg-green-600 hover:bg-green-700 disabled:opacity-50 px-8 py-3 rounded-lg font-bold"
+    >
+      {loading ? "Starting..." : "Start Battle"}
+    </button>
+  </div>
+)}
+
+
         {question ? (
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 md:p-8">
             <h2 className="text-lg md:text-xl font-semibold leading-relaxed mb-7">
