@@ -1,7 +1,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import API from "../../services/api";
+import API from "../../services/quizBattleApi";
 
 const getToken = () => localStorage.getItem("token");
 
@@ -171,7 +171,7 @@ function QuizBattle() {
           category,
           difficulty,
           totalQuestions: Number(totalQuestions),
-          timeLimitSeconds: Number(timeLimitMinutes) * 60,
+          timeLimitMinutes: Number(timeLimitMinutes),
         },
         { headers: getHeaders() }
       );
