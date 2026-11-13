@@ -56,7 +56,12 @@ function QuizBattle() {
   const autoSubmitRef = useRef(false);
 
   const me = battle?.me || battle?.myParticipant || null;
-  const participants = battle?.participants || [];
+  const participants = battle
+  ? [
+      ...(battle.me ? [battle.me] : []),
+      ...(battle.opponent ? [battle.opponent] : []),
+    ]
+  : [];
   const questions = battle?.questions || [];
   const results = battle?.results || null;
 
