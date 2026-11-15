@@ -256,6 +256,7 @@ function Home() {
 
             {/* CTA Buttons */}
             <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
+              {/*
               <button
                 onClick={() => {
                   const token = localStorage.getItem("token");
@@ -266,6 +267,7 @@ function Home() {
                 <span className="relative z-10">🎯 Start Interview</span>
                 <div className="absolute inset-0 bg-gradient-to-r from-purple-500 to-blue-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-xl"></div>
               </button>
+              */}
 
               <button
                 onClick={() => navigate("/category")}
@@ -549,6 +551,7 @@ function Home() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            {/*
             <button
               onClick={() => {
                 const token = localStorage.getItem("token");
@@ -558,6 +561,8 @@ function Home() {
             >
               {user ? "🎯 Start Interview Now" : "✨ Get Started Free"}
             </button>
+            */}
+
 
             {!user && (
               <button
