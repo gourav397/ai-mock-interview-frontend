@@ -112,10 +112,12 @@ function Dashboard() {
               className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold rounded-xl shadow-lg shadow-purple-600/30 hover:shadow-purple-600/50 hover:scale-105 transition-all duration-200">
               📝 New Test
             </button>
+             {/*
             <button onClick={() => navigate("/interview")}
               className="px-5 py-2.5 bg-white/10 text-white font-bold rounded-xl border border-white/20 hover:bg-white/20 transition-all duration-200">
               🎯 Interview
             </button>
+            */}
           </div>
           
 <button onClick={() => navigate("/ai-interview")}
@@ -197,12 +199,14 @@ function Dashboard() {
                 <span className="text-left">Practice Test — Choose category</span>
                 <span className="ml-auto text-purple-300">→</span>
               </button>
+              {/*
               <button onClick={() => navigate("/interview")}
                 className="w-full p-3 bg-gradient-to-r from-emerald-600/30 to-teal-600/30 rounded-xl border border-emerald-400/20 text-white font-semibold flex items-center gap-3 hover:from-emerald-600/50 hover:to-teal-600/50 transition-all">
                 <span className="text-2xl">🎯</span>
                 <span className="text-left">Start AI Interview</span>
                 <span className="ml-auto text-emerald-300">→</span>
               </button>
+              */}
               
 <button onClick={() => navigate("/ai-interview")}
   className="w-full p-3 bg-gradient-to-r from-pink-600/30 to-purple-600/30 rounded-xl border border-pink-400/20 text-white font-semibold flex items-center gap-3 hover:from-pink-600/50 hover:to-purple-600/50 transition-all">
